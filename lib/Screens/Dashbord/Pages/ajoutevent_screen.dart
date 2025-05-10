@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import '../../../Core/helpers/snack_bar_helper.dart';
+import '../../../Core/preferences.dart';
 import '../Services/ajoutevent_service.dart';
+
 //Affichage des evenements
 class EventDashboard extends StatefulWidget {
   const EventDashboard({Key? key}) : super(key: key);
@@ -17,6 +19,7 @@ class _EventDashboardState extends State<EventDashboard> {
   List<Map<String, dynamic>> _events = [];
   final EventService _eventService = EventService();
   int? _userId;
+  Preferences _preferences = Preferences();
 
   @override
   void initState() {
@@ -41,8 +44,7 @@ class _EventDashboardState extends State<EventDashboard> {
 
   Future<int> _getUserId() async {
     if (_userId != null) return _userId!;
-    final prefs = await SharedPreferences.getInstance();
-    final storedId = prefs.getInt('user_id');
+    final storedId = await _preferences.getUserId();
     if (storedId != null) {
       _userId = storedId;
       return storedId;
@@ -52,44 +54,48 @@ class _EventDashboardState extends State<EventDashboard> {
   }
 
   void _showAddEventForm() {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.9,
-          minChildSize: 0.6,
-          maxChildSize: 0.95,
-          builder: (_, scrollController) {
-            return Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                top: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-              ),
-              child: Column(
-                children: [
-                  _buildSheetHeader(),
-                  Divider(),
-                  Expanded(
-                    child: AddEventForm(
-                      centreId: _userId!,
-                      onSuccess: () {  // Correction: onSuccess au lieu de onEventAdded
-                        Navigator.pop(context);
-                        _loadEvents();
-                      },
+        return ScaffoldMessenger(
+          // Ceci devrait permettre aux SnackBar de s'afficher dans le BottomSheet
+          child: DraggableScrollableSheet(
+            initialChildSize: 0.9,
+            minChildSize: 0.6,
+            maxChildSize: 0.95,
+            builder: (_, scrollController) {
+              return Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                padding: EdgeInsets.only(
+                  left: 16,
+                  right: 16,
+                  top: 16,
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Column(
+                  children: [
+                    _buildSheetHeader(),
+                    Divider(),
+                    Expanded(
+                      child: AddEventForm(
+                        centreId: _userId!,
+                        onSuccess: () {  // Correction: onSuccess au lieu de onEventAdded
+                          Navigator.pop(context);
+                          _loadEvents();
+                        },
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            );
-          },
+                  ],
+                ),
+              );
+            },
+          ),
         );
       },
     );
@@ -144,26 +150,17 @@ class _EventDashboardState extends State<EventDashboard> {
       final success = await _eventService.deleteEvent(id);
       final message = success ? 'Événement supprimé avec succès' : 'Échec de la suppression';
       final color = success ? Colors.green : Colors.red;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: color),
-      );
+      SnackBarHelper.showSuccess(context, message);
       if (success) _loadEvents();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      SnackBarHelper.showError(context, 'Erreur: ${e.toString()}');
     } finally {
       setState(() => _isLoading = false);
     }
   }
 
   void _editEvent(Map<String, dynamic> event) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('En cours de conception ... ')),
-    );
+    SnackBarHelper.showSuccess(context, 'En cours de conception ... ');
   }
 
   @override
@@ -298,6 +295,7 @@ class _EventDashboardState extends State<EventDashboard> {
     );
   }
 }
+
 //Formulaire d'ajout
 class AddEventForm extends StatefulWidget {
   final Function onSuccess;
@@ -372,22 +370,22 @@ class _AddEventFormState extends State<AddEventForm> {
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedDate == null) {
-      _showErrorSnackBar('Veuillez sélectionner une date pour l\'événement');
+      SnackBarHelper.showError(context, 'Veuillez sélectionner une date pour l\'événement');
       return;
     }
 
     if (_hasTarifStandard && _tarifStandardController.text.isEmpty) {
-      _showErrorSnackBar('Veuillez entrer un tarif standard');
+      SnackBarHelper.showError(context, 'Veuillez entrer un tarif standard');
       return;
     }
 
     if (_hasTarifVIP && _tarifVIPController.text.isEmpty) {
-      _showErrorSnackBar('Veuillez entrer un tarif VIP');
+      SnackBarHelper.showError(context, 'Veuillez entrer un tarif VIP');
       return;
     }
 
     if (_hasTarifVVIP && _tarifVVIPController.text.isEmpty) {
-      _showErrorSnackBar('Veuillez entrer un tarif VVIP');
+      SnackBarHelper.showError(context, 'Veuillez entrer un tarif VVIP');
       return;
     }
 
@@ -408,28 +406,21 @@ class _AddEventFormState extends State<AddEventForm> {
       final eventId = await _eventService.addEvent(event);
 
       if (eventId > 0) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(
-            content: Text('Événement ajouté avec succès'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        Navigator.of(ctx).pop();
-        //widget.onSuccess();
+        SnackBarHelper.showSuccess(context, 'Événement ajouté avec succès');
+        await Future.delayed(Duration(milliseconds: 1500));
+        if (mounted) {
+          Navigator.of(context).pop();
+          widget.onSuccess();
+        }
       } else {
-        _showErrorSnackBar('Échec de l\'ajout de l\'événement');
+        SnackBarHelper.showError(context, 'Échec de l\'ajout de l\'événement');
       }
     } catch (e) {
-      _showErrorSnackBar('Erreur: ${e.toString()}');
+      SnackBarHelper.showError(context, 'Erreur: ${e.toString()}');
+
     } finally {
       setState(() => _isLoading = false);
     }
-  }
-
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
   }
 
   @override
