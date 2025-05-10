@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../Core/helpers/bottom_nav_item.dart';
 import 'ajout_screen.dart';
 import 'profil_screen.dart';
 import 'statistique_screen.dart';
@@ -139,7 +140,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _BottomNavItem(
+          BottomNavItem(
             icon: Icons.bar_chart_rounded,
             label: 'Stats',
             index: 0,
@@ -149,7 +150,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             inactiveColor: _inactiveIconColor,
             iconSize: _navBarIconSize,
           ),
-          _BottomNavItem(
+          BottomNavItem(
             icon: Icons.add_circle_outline_rounded,
             label: 'Ajouter',
             index: 1,
@@ -159,7 +160,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             inactiveColor: _inactiveIconColor,
             iconSize: _navBarIconSize,
           ),
-          _BottomNavItem(
+          BottomNavItem(
             icon: Icons.person_outline_rounded,
             label: 'Profil',
             index: 2,
@@ -168,54 +169,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
             activeColor: _primaryColor,
             inactiveColor: _inactiveIconColor,
             iconSize: _navBarIconSize,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BottomNavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final int index;
-  final int selectedIndex;
-  final Function(int) onTap;
-  final Color activeColor;
-  final Color inactiveColor;
-  final double iconSize;
-
-  const _BottomNavItem({
-    required this.icon,
-    required this.label,
-    required this.index,
-    required this.selectedIndex,
-    required this.onTap,
-    required this.activeColor,
-    required this.inactiveColor,
-    required this.iconSize,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bool isActive = index == selectedIndex;
-    final Color currentColor = isActive ? activeColor : inactiveColor;
-
-    return GestureDetector(
-      onTap: () => onTap(index),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: iconSize, color: currentColor),
-          SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: currentColor,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
           ),
         ],
       ),
