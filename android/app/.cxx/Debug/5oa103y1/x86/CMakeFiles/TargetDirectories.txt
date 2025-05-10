@@ -1,0 +1,2 @@
+D:/wamp64/www/SoutenanceMai2025/tickngo/android/app/.cxx/Debug/5oa103y1/x86/CMakeFiles/edit_cache.dir
+D:/wamp64/www/SoutenanceMai2025/tickngo/android/app/.cxx/Debug/5oa103y1/x86/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,2 @@
+D:/wamp64/www/SoutenanceMai2025/tickngo/android/app/.cxx/RelWithDebInfo/573f415p/armeabi-v7a/CMakeFiles/edit_cache.dir
+D:/wamp64/www/SoutenanceMai2025/tickngo/android/app/.cxx/RelWithDebInfo/573f415p/armeabi-v7a/CMakeFiles/rebuild_cache.dir
