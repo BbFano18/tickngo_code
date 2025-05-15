@@ -1,73 +1,12 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+import '../Config/kkiapay_config.dart';
 
 import '../API/api_config.dart';
 
-
-class PaymentTransaction {
-  final String id;
-  final double amount;
-  final String status;
-  final String? paymentMethod;
-  final DateTime timestamp;
-  final String? receiptUrl;
-  final Map<String, dynamic> metadata;
-
-  PaymentTransaction({
-    required this.id,
-    required this.amount,
-    required this.status,
-    this.paymentMethod,
-    required this.timestamp,
-    this.receiptUrl,
-    required this.metadata,
-  });
-
-  factory PaymentTransaction.fromKkiapayResponse(Map<String, dynamic> data) {
-    return PaymentTransaction(
-      id: data['transactionId'] ?? '',
-      amount: _parseAmount(data['amount']),
-      status: data['status'] ?? 'PENDING',
-      paymentMethod: data['paymentMethod'],
-      timestamp: _parseDate(data['createdAt']),
-      receiptUrl: data['receiptUrl'],
-      metadata: Map<String, dynamic>.from(data['metadata'] ?? {}),
-    );
-  }
-
-  static double _parseAmount(dynamic value) {
-    if (value == null) return 0.0;
-    try {
-      return double.parse(value.toString());
-    } catch (_) {
-      return 0.0;
-    }
-  }
-
-  static DateTime _parseDate(dynamic value) {
-    if (value is String && value.isNotEmpty) {
-      try {
-        return DateTime.parse(value);
-      } catch (_) {
-        return DateTime.now();
-      }
-    }
-    return DateTime.now();
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'amount': amount,
-      'status': status,
-      'paymentMethod': paymentMethod,
-      'timestamp': timestamp.toIso8601String(),
-      'receiptUrl': receiptUrl,
-      'metadata': metadata,
-    };
-  }
-}
 class Ticket {
   final String id;
   final String eventTitle;
@@ -91,7 +30,6 @@ class Ticket {
     required this.qrCode,
   });
 
-  // Convertion ticket en JSON
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -106,7 +44,6 @@ class Ticket {
     };
   }
 
-  //Crée un ticket JSON
   factory Ticket.fromJson(Map<String, dynamic> json) {
     return Ticket(
       id: json['id'],
@@ -121,7 +58,6 @@ class Ticket {
     );
   }
 
-  // date
   String get formattedDate {
     final date = purchaseDate;
     return "${date.day.toString().padLeft(2, '0')}/"
@@ -132,52 +68,167 @@ class Ticket {
   }
 }
 
-class KKiapayService {
-  final String _apiKey;
-  final String _privateKey;
-  final bool _isSandbox;
+class PaymentTransaction {
+  final String id;
+  final String status;
+  final double amount;
+  final DateTime timestamp;
+  final String? paymentMethod;
+  final Map<String, dynamic> metadata;
 
-  KKiapayService({
-    required String apiKey,
-    required String privateKey,
-    bool isSandbox = true,
-  })  : _apiKey = apiKey,
-        _privateKey = "pk_36b81a3083924f93861a4cd5791dd8be4a8e21d4b33eccf4a7adacb2e8393ffe",
-        _isSandbox = isSandbox;
-  // Vérifie un paiement avec l'ID de transaction
-  Future<Map<String, dynamic>> verifyPayment(String transactionId) async {
+  PaymentTransaction({
+    required this.id,
+    required this.status,
+    required this.amount,
+    required this.timestamp,
+    this.paymentMethod,
+    required this.metadata,
+  });
+
+  factory PaymentTransaction.fromKkiapayResponse(Map<String, dynamic> json) {
+    return PaymentTransaction(
+      id: json['transactionId'] ?? '',
+      status: json['status'] ?? '',
+      amount: (json['amount'] ?? 0.0).toDouble(),
+      timestamp: DateTime.now(),
+      paymentMethod: json['paymentMethod'],
+      metadata: json['metadata'] ?? {},
+    );
+  }
+}
+
+class KkiapayService {
+  final bool isSandbox;
+  final String apiKey;
+  final String? privateKey;
+
+  KkiapayService({
+    this.isSandbox = KkiapayConfig.IS_SANDBOX,
+    this.apiKey = KkiapayConfig.SANDBOX_PUBLIC_KEY,
+    this.privateKey = KkiapayConfig.SANDBOX_PRIVATE_KEY,
+  });
+
+  String get baseUrl => isSandbox ? KkiapayConfig.SANDBOX_URL : KkiapayConfig.PRODUCTION_URL;
+  String get widgetUrl => isSandbox ? KkiapayConfig.SANDBOX_WIDGET_URL : KkiapayConfig.PRODUCTION_WIDGET_URL;
+
+  Widget buildPaymentWidget({
+    required double amount,
+    required String name,
+    required String reason,
+    required Function(PaymentTransaction) onSuccess,
+    required Function(String) onError,
+  }) {
+    final String paymentUrl = _buildPaymentUrl(
+      amount: amount,
+      name: name,
+      reason: reason,
+    );
+
+    late final WebViewController controller;
+
+    return WebViewWidget(
+      controller: controller = WebViewController()
+        ..setJavaScriptMode(JavaScriptMode.unrestricted)
+        ..setNavigationDelegate(
+          NavigationDelegate(
+            onNavigationRequest: (NavigationRequest request) {
+              if (request.url.startsWith(KkiapayConfig.SUCCESS_CALLBACK)) {
+                _handlePaymentSuccess(request.url, amount, name, reason, onSuccess);
+                return NavigationDecision.prevent;
+              } else if (request.url.startsWith(KkiapayConfig.CANCEL_CALLBACK)) {
+                onError('Paiement annulé');
+                return NavigationDecision.prevent;
+              }
+              return NavigationDecision.navigate;
+            },
+            onWebResourceError: (WebResourceError error) {
+              onError('Erreur de chargement: ${error.description}');
+            },
+          ),
+        )
+        ..loadRequest(Uri.parse(paymentUrl)),
+    );
+  }
+
+  String _buildPaymentUrl({
+    required double amount,
+    required String name,
+    required String reason,
+  }) {
+    final params = {
+      'amount': amount.toString(),
+      'name': name,
+      'reason': reason,
+      'key': apiKey,
+      'callback': KkiapayConfig.SUCCESS_CALLBACK,
+      'cancel_callback': KkiapayConfig.CANCEL_CALLBACK,
+      'sandbox': isSandbox.toString(),
+    };
+
+    return Uri.parse(widgetUrl).replace(queryParameters: params).toString();
+  }
+
+  Future<void> _handlePaymentSuccess(
+    String url,
+    double amount,
+    String name,
+    String reason,
+    Function(PaymentTransaction) onSuccess,
+  ) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl} + paiement/verifier'),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-KEY': _privateKey,
-        },
-        body: jsonEncode({
-          'transactionId': transactionId,
-        }),
-      );
-
-      if (response.statusCode == 202) {
-        final data = jsonDecode(response.body);
-        return data;
+      final uri = Uri.parse(url);
+      final transactionId = uri.queryParameters['transactionId'];
+      
+      if (transactionId != null) {
+        final verificationResult = await verifyPayment(transactionId);
+        
+        if (verificationResult['status'] == 'SUCCESS') {
+          final transaction = PaymentTransaction(
+            id: transactionId,
+            status: 'SUCCESS',
+            amount: amount,
+            timestamp: DateTime.now(),
+            paymentMethod: verificationResult['paymentMethod'],
+            metadata: {
+              'name': name,
+              'reason': reason,
+              'verificationData': verificationResult,
+            },
+          );
+          onSuccess(transaction);
+        } else {
+          throw Exception('Échec de la vérification du paiement');
+        }
       } else {
-        throw Exception(
-            'Échec de la vérification du paiement: ${response.statusCode} - ${response.body}');
+        throw Exception('ID de transaction manquant');
       }
     } catch (e) {
-      throw Exception('Erreur lors de la vérification du paiement: $e');
+      print('Erreur lors du traitement du paiement: $e');
+      throw Exception('Échec du traitement du paiement');
     }
   }
 
-  // Génère un code QR simulé pour un ticket
-  String generateTicketQrCode(String ticketId, String eventId) {
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final random = Random().nextInt(10000);
-    return 'TNG-$eventId-$ticketId-$timestamp-$random';
+  Future<Map<String, dynamic>> verifyPayment(String transactionId) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/v1/transactions/$transactionId/verify'),
+        headers: {
+          'Authorization': 'Bearer ${privateKey ?? KkiapayConfig.SANDBOX_PRIVATE_KEY}',
+          'Content-Type': 'application/json',
+        },
+      ).timeout(Duration(seconds: KkiapayConfig.REQUEST_TIMEOUT));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body);
+      } else {
+        throw Exception('Erreur de vérification: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Erreur lors de la vérification: $e');
+      throw Exception('Échec de la vérification du paiement');
+    }
   }
 
-  //Crée une liste de tickets après paiement réussi
   Future<List<Ticket>> createTickets({
     required String transactionId,
     required String eventTitle,
@@ -186,33 +237,53 @@ class KKiapayService {
     required int quantity,
     required double totalPrice,
   }) async {
-    List<Ticket> tickets = [];
+    try {
+      final List<Ticket> tickets = [];
+      final unitPrice = (quantity > 0) ? totalPrice / quantity : totalPrice;
 
-    final unitPrice = (quantity > 0) ? totalPrice / quantity : totalPrice;
+      for (int i = 0; i < quantity; i++) {
+        final ticketId = 'TKT-${DateTime.now().millisecondsSinceEpoch}-$i';
+        final qrCode = 'TNG-${eventTitle.hashCode}-$ticketId-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(10000)}';
 
-    for (int i = 0; i < quantity; i++) {
-      final ticketId = 'TKT-${DateTime.now().millisecondsSinceEpoch}-$i';
-      final qrCode = generateTicketQrCode(
-        ticketId,
-        eventTitle.hashCode.toString(),
-      );
+        final ticket = Ticket(
+          id: ticketId,
+          eventTitle: eventTitle,
+          ticketType: ticketType,
+          category: category,
+          quantity: 1,
+          price: unitPrice,
+          transactionId: transactionId,
+          purchaseDate: DateTime.now(),
+          qrCode: qrCode,
+        );
 
-      tickets.add(Ticket(
-        id: ticketId,
-        eventTitle: eventTitle,
-        ticketType: ticketType,
-        category: category,
-        quantity: 1,
-        price: unitPrice,
-        transactionId: transactionId,
-        purchaseDate: DateTime.now(),
-        qrCode: qrCode,
-      ));
+        await _saveTicketToDatabase(ticket);
+        tickets.add(ticket);
+      }
+
+      return tickets;
+    } catch (e) {
+      print('Erreur lors de la création des tickets: $e');
+      throw Exception('Échec de la création des tickets');
     }
+  }
 
-    // Simuler un appel réseau
-    await Future.delayed(const Duration(seconds: 1));
+  Future<void> _saveTicketToDatabase(Ticket ticket) async {
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/tickets'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(ticket.toJson()),
+      ).timeout(Duration(seconds: KkiapayConfig.REQUEST_TIMEOUT));
 
-    return tickets;
+      if (response.statusCode != 201) {
+        throw Exception('Échec de la sauvegarde du ticket: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Erreur lors de la sauvegarde du ticket: $e');
+      throw Exception('Échec de la sauvegarde du ticket');
+    }
   }
 }

@@ -1,38 +1,93 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import '../../../API/api_config.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
+import 'package:intl/intl.dart';
 
-class StatsScreen extends StatelessWidget {
-  final Map<String, int> ventesParType = {
-    'Événement': 215,
-    'Jeu': 180,
-    'Cinéma': 250,
+class StatsScreen extends StatefulWidget {
+  @override
+  _StatsScreenState createState() => _StatsScreenState();
+}
+
+class _StatsScreenState extends State<StatsScreen> {
+  bool isLoading = true;
+  Map<String, dynamic> statsData = {
+    'ventesParType': {},
+    'topVendus': {
+      'evenement': [],
+      'jeu': [],
+      'cinema': []
+    },
+    'totalClients': 0,
+    'revenusParMois': [],
+    'tauxReservation': 0.0
   };
 
-  final List<String> topVendusEvenement = ['Concert VIP', 'Pièce de Théâtre', 'Festival'];
-  final List<String> topVendusJeu = ['Tournoi Local', 'Soirée Jeux de Société', 'Escape Game'];
-  final List<String> topVendusCinema = ['Blockbuster Actuel', 'Film Indépendant', 'Séance de Minuit'];
+  @override
+  void initState() {
+    super.initState();
+    _fetchStats();
+  }
 
-  final int totalClients = 645;
+  void _showError(String message) {
+    if (!mounted) return;
 
-  // Couleurs de la palette
-  final Color primaryViolet = Color(0xFF7F56D9);
-  final Color accentOrange = Color(0xFFF97316);
-  final Color lightGrey = Colors.grey[300]!;
-  final Color whiteColor = Colors.white;
-  final Color eventColor = Colors.blueAccent;
-  final Color gameColor = Colors.greenAccent.shade700;
-  final Color cinemaColor = Colors.orangeAccent;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger != null) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _fetchStats() async {
+    if (!mounted) return;
+
+    setState(() => isLoading = true);
+
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}/statistiques'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        setState(() {
+          statsData = json.decode(response.body);
+          isLoading = false;
+        });
+      } else {
+        throw Exception('Échec du chargement des statistiques');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isLoading = false);
+      _showError('Erreur lors du chargement des statistiques: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: primaryViolet,
+        backgroundColor: Color(0xFF7F56D9),
         automaticallyImplyLeading: false,
         centerTitle: true,
         title: Text(
-          'Analyse des Ventes',
+          'Tableau de Bord',
           style: GoogleFonts.montserrat(
             fontSize: 20.0,
             fontWeight: FontWeight.bold,
@@ -42,32 +97,27 @@ class StatsScreen extends StatelessWidget {
         actions: [
           IconButton(
             icon: Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              // Action pour rafraîchir les données
-            },
+            onPressed: _fetchStats,
           ),
         ],
       ),
-      body: SafeArea(
+      body: isLoading
+          ? Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+        onRefresh: _fetchStats,
         child: SingleChildScrollView(
+          physics: AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.all(16.0),
-          physics: ClampingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              SizedBox(height: 8.0),
-              _buildTicketTypeComparisonCard(context),
-              SizedBox(height: 16.0),
-              _buildTotalSoldByTypeCard(context),
-              SizedBox(height: 16.0),
-              _buildTopSellingByTypeCard(context, 'Événements', topVendusEvenement, eventColor),
-              SizedBox(height: 16.0),
-              _buildTopSellingByTypeCard(context, 'Jeux', topVendusJeu, gameColor),
-              SizedBox(height: 16.0),
-              _buildTopSellingByTypeCard(context, 'Cinéma', topVendusCinema, cinemaColor),
-              SizedBox(height: 16.0),
-              _buildTotalClientsCard(context),
-              SizedBox(height: 24.0),
+            children: [
+              _buildRevenueChart(),
+              SizedBox(height: 20),
+              _buildTicketTypeChart(),
+              SizedBox(height: 20),
+              _buildTopSellingSection(),
+              SizedBox(height: 20),
+              _buildPerformanceMetrics(),
             ],
           ),
         ),
@@ -75,69 +125,43 @@ class StatsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTicketTypeComparisonCard(BuildContext context) {
+  Widget _buildRevenueChart() {
     return Card(
-      elevation: 2.0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: EdgeInsets.all(16.0),
+        padding: EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Icon(Icons.pie_chart_rounded, color: primaryViolet, size: 24.0),
-                SizedBox(width: 8.0),
-                Expanded(
-                  child: Text(
-                    'Comparaison des Types de Tickets',
-                    style: GoogleFonts.inter(
-                      fontSize: 16.0,
-                      fontWeight: FontWeight.w600,
-                      color: primaryViolet,
-                    ),
-                    softWrap: true,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.0),
-            // Wrap pour éviter les problèmes de dépassement
-            Wrap(
-              spacing: 16.0,
-              runSpacing: 8.0,
-              alignment: WrapAlignment.spaceAround,
-              children: ventesParType.entries.map((entry) {
-                return _buildPieChartLegendItem(
-                    _getColorForCategory(entry.key),
-                    entry.key,
-                    entry.value
-                );
-              }).toList(),
-            ),
-            SizedBox(height: 16.0),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: ventesParType.entries.map((entry) {
-                return Flexible(
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 30.0,
-                        height: entry.value / 5.0,
-                        color: _getColorForCategory(entry.key),
-                      ),
-                      SizedBox(height: 4.0),
-                      Text('${entry.value}', style: TextStyle(fontSize: 12.0)),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-            SizedBox(height: 8.0),
+          children: [
             Text(
-              'Distribution des ventes par catégorie de ticket',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12.0),
+              'Revenus Mensuels',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF7F56D9),
+              ),
+            ),
+            SizedBox(height: 20),
+            SizedBox(
+              height: 200,
+              child: SfCartesianChart(
+                primaryXAxis: CategoryAxis(),
+                primaryYAxis: NumericAxis(
+                  numberFormat: NumberFormat.compact(),
+                  title: AxisTitle(text: 'Revenus (FCFA)'),
+                ),
+                tooltipBehavior: TooltipBehavior(enable: true),
+                series: <CartesianSeries>[
+                  ColumnSeries<Map<String, dynamic>, String>(
+                    dataSource: List<Map<String, dynamic>>.from(statsData['revenusParMois']),
+                    xValueMapper: (Map<String, dynamic> data, _) => data['mois'] as String,
+                    yValueMapper: (Map<String, dynamic> data, _) => data['montant'] as num,
+                    name: 'Revenus',
+                    color: Color(0xFF7F56D9),
+                  )
+                ],
+              ),
             ),
           ],
         ),
@@ -145,214 +169,165 @@ class StatsScreen extends StatelessWidget {
     );
   }
 
-  Color _getColorForCategory(String category) {
-    switch (category) {
-      case 'Événement':
-        return eventColor;
-      case 'Jeu':
-        return gameColor;
-      case 'Cinéma':
-        return cinemaColor;
-      default:
-        return primaryViolet;
-    }
-  }
+  Widget _buildTicketTypeChart() {
+    final List<PieData> pieData = statsData['ventesParType'].entries
+        .map<PieData>((entry) => PieData(entry.key, (entry.value as num).toDouble()))
+        .toList();
 
-  Widget _buildPieChartLegendItem(Color color, String label, int value) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 12.0,
-              height: 12.0,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
+            Text(
+              'Répartition des Ventes',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF7F56D9),
               ),
             ),
-            SizedBox(width: 4.0),
-            Text(label, style: TextStyle(fontSize: 14.0)),
+            SizedBox(height: 20),
+            SizedBox(
+              height: 200,
+              child: SfCircularChart(
+                legend: Legend(isVisible: true, position: LegendPosition.bottom),
+                series: <CircularSeries>[
+                  PieSeries<PieData, String>(
+                    dataSource: pieData,
+                    xValueMapper: (PieData data, _) => data.category,
+                    yValueMapper: (PieData data, _) => data.value,
+                    dataLabelSettings: DataLabelSettings(isVisible: true),
+                  )
+                ],
+              ),
+            ),
           ],
         ),
-        Text('$value', style: TextStyle(fontSize: 12.0, color: Colors.grey[600])),
+      ),
+    );
+  }
+
+  Widget _buildTopSellingSection() {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Top des Ventes',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF7F56D9),
+              ),
+            ),
+            SizedBox(height: 20),
+            _buildTopSellingList('Événements', statsData['topVendus']['evenement'], Icons.event),
+            _buildTopSellingList('Jeux', statsData['topVendus']['jeu'], Icons.sports_esports),
+            _buildTopSellingList('Cinéma', statsData['topVendus']['cinema'], Icons.movie),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopSellingList(String title, List<dynamic> items, IconData icon) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: Color(0xFF7F56D9)),
+            SizedBox(width: 8),
+            Text(
+              title,
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+        ...items.map((item) => ListTile(
+          leading: Icon(Icons.star, color: Colors.amber),
+          title: Text(item['nom']),
+          subtitle: Text('${item['ventes']} ventes'),
+          trailing: Text('${item['revenu']} FCFA'),
+        )).toList(),
+        Divider(),
       ],
     );
   }
 
-  Widget _buildTotalSoldByTypeCard(BuildContext context) {
+  Widget _buildPerformanceMetrics() {
     return Card(
-      elevation: 2.0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: EdgeInsets.all(16.0),
+        padding: EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Icon(Icons.format_list_numbered_rounded, color: primaryViolet, size: 24.0),
-                SizedBox(width: 8.0),
-                Expanded(
-                  child: Text(
-                    'Total Vendus par Catégorie',
-                    style: GoogleFonts.inter(
-                      fontSize: 16.0,
-                      fontWeight: FontWeight.w600,
-                      color: primaryViolet,
-                    ),
-                    softWrap: true,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.0),
-            _buildTotalSoldItem(context, 'Événements', ventesParType['Événement']!, eventColor),
-            _buildTotalSoldItem(context, 'Jeux', ventesParType['Jeu']!, gameColor),
-            _buildTotalSoldItem(context, 'Cinéma', ventesParType['Cinéma']!, cinemaColor),
-            SizedBox(height: 8.0),
+          children: [
             Text(
-              'Nombre total de tickets vendus pour chaque catégorie',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12.0),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTotalSoldItem(BuildContext context, String category, int total, Color color) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                Icon(Icons.label_outline, color: color, size: 16.0),
-                SizedBox(width: 8.0),
-                Flexible(
-                  child: Text(
-                    category,
-                    style: TextStyle(fontSize: 15.0, fontWeight: FontWeight.w500),
-                    softWrap: true,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Text(
-              '$total Tickets',
-              style: TextStyle(fontSize: 15.0, color: color, fontWeight: FontWeight.bold)
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTopSellingByTypeCard(BuildContext context, String title, List<String> items, Color color) {
-    return Card(
-      elevation: 2.0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-      child: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Icon(Icons.trending_up_rounded, color: color, size: 24.0),
-                SizedBox(width: 8.0),
-                Expanded(
-                  child: Text(
-                    'Top Vendus - $title',
-                    style: GoogleFonts.inter(
-                      fontSize: 16.0,
-                      fontWeight: FontWeight.w600,
-                      color: primaryViolet,
-                    ),
-                    softWrap: true,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.0),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: items.map((item) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Row(
-                  children: [
-                    Icon(Icons.label_outline, color: color, size: 16.0),
-                    SizedBox(width: 8.0),
-                    Expanded(
-                      child: Text(
-                        item,
-                        style: TextStyle(fontSize: 14.0),
-                        softWrap: true,
-                      ),
-                    ),
-                  ],
-                ),
-              )).toList(),
-            ),
-            SizedBox(height: 8.0),
-            Text(
-              'Les articles les plus populaires dans la catégorie $title',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12.0),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTotalClientsCard(BuildContext context) {
-    return Card(
-      elevation: 2.0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12.0)),
-      child: Padding(
-        padding: EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Icon(Icons.people_rounded, color: accentOrange, size: 24.0),
-                SizedBox(width: 8.0),
-                Expanded(
-                  child: Text(
-                    'Total de Clients',
-                    style: GoogleFonts.inter(
-                      fontSize: 16.0,
-                      fontWeight: FontWeight.w600,
-                      color: primaryViolet,
-                    ),
-                    softWrap: true,
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 12.0),
-            Text(
-              '$totalClients',
-              style: GoogleFonts.montserrat(
-                fontSize: 36.0,
+              'Métriques de Performance',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
                 fontWeight: FontWeight.bold,
-                color: primaryViolet,
+                color: Color(0xFF7F56D9),
               ),
             ),
-            SizedBox(height: 8.0),
-            Text(
-              'Nombre total de clients enregistrés',
-              style: TextStyle(color: Colors.grey[600], fontSize: 12.0),
+            SizedBox(height: 20),
+            _buildMetricTile(
+              'Clients Total',
+              '${statsData['totalClients']}',
+              Icons.people,
+              Colors.blue,
+            ),
+            _buildMetricTile(
+              'Taux de Réservation',
+              '${(statsData['tauxReservation'] * 100).toStringAsFixed(1)}%',
+              Icons.trending_up,
+              Colors.green,
             ),
           ],
         ),
       ),
     );
   }
+
+  Widget _buildMetricTile(String title, String value, IconData icon, Color color) {
+    return ListTile(
+      leading: Container(
+        padding: EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: color),
+      ),
+      title: Text(title),
+      trailing: Text(
+        value,
+        style: GoogleFonts.poppins(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class PieData {
+  final String category;
+  final double value;
+
+  PieData(this.category, this.value);
 }

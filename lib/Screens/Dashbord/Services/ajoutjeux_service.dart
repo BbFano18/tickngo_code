@@ -47,7 +47,7 @@ class GameService {
   Future<List<Map<String, dynamic>>> fetchGameSchedules(int gameId) async {
     try {
       final response =
-      await http.get(Uri.parse('${ApiConfig.baseUrl}jeux/$gameId/programmes'));
+      await http.get(Uri.parse('${ApiConfig.baseUrl}jeux/$gameId/programme'));
       if (response.statusCode != 200) {
         throw Exception('Erreur ${response.statusCode} - ${response.body}');
       }
@@ -76,65 +76,61 @@ class GameService {
 
   // Ajouter un nouveau jeu, éventuellement avec des programmations
   Future addGame(Map<String, dynamic> data) async {
-    // Valider les champs obligatoires pour l'ajout du jeu
-    final requiredForGame = {
-      'nom_jeux': 'Nom du jeu',
-      'duree_jeux': 'Durée',
-      'tarif_enf_jeux': 'Tarif enfant',
-      'tarif_adu_jeux': 'Tarif adulte',
-      'age_mini': 'Âge minimum',
-    };
+    try {
+      final requiredFields = {
+        'nom_jeux': 'Nom du jeu',
+        'duree_jeux': 'Durée',
+        'id_centre': 'Centre',
+        'lieu_jeux': 'Lieu',
+        'tarif_enf_jeux': 'Tarif enfant',
+        'tarif_adu_jeux': 'Tarif adulte',
+      };
 
-    for (var entry in requiredForGame.entries) {
-      final val = data[entry.key];
-      if (val == null || (val is String && val.isEmpty)) {
-        throw Exception('${entry.value} est requis');
+      for (final entry in requiredFields.entries) {
+        final value = data[entry.key];
+        if (value == null ||
+            (value is List && value.isEmpty) ||
+            (value is String && value.isEmpty)) {
+          throw Exception('${entry.value} est requis');
+        }
       }
-    }
 
-    final uri = Uri.parse('${ApiConfig.baseUrl}jeux');
-    final request = http.MultipartRequest('POST', uri);
+      final uri = Uri.parse('${ApiConfig.baseUrl}jeux');
+      final request = http.MultipartRequest('POST', uri);
 
-    // Ajouter les champs sauf l'image et les programmes
-    data.forEach((key, value) {
-      if (value != null && key != 'logo_jeux' && key != 'programmes') {
-        request.fields[key] = value.toString();
+      // Ajouter les champs sauf l'image
+      data.forEach((key, value) {
+        if (value != null && key != 'logo_jeux') {
+          request.fields[key] = value.toString();
+        }
+      });
+
+      // Joindre le fichier image si fourni
+      if (data['logo_jeux'] != null && data['logo_jeux'] is File) {
+        final file = data['logo_jeux'] as File;
+        final filename = file.path.split('/').last;
+        request.files.add(await http.MultipartFile.fromPath(
+          'logo_jeux', // Nom du champ attendu par l'API
+          file.path,
+          filename: filename,
+        ));
       }
-    });
 
-    // Joindre le fichier image si fourni
-    if (data['logo_jeux'] != null && data['logo_jeux'] is File) { // Ici on vérifie si c'est un File
-      final file = data['logo_jeux'] as File;
-      request.files.add(http.MultipartFile(
-        'logo_jeux',
-        file.openRead(),
-        file.lengthSync(),
-        filename: file.path.split('/').last,
-      ));
+      final response = await request.send();
+      final responseData = await http.Response.fromStream(response);
+
+      if (response.statusCode == 201) {
+        final body = jsonDecode(responseData.body) as Map<String, dynamic>;
+        final id = (body['data'] as Map<String, dynamic>)['id_jeux'] as int;
+        return id;
+      }
+
+      throw Exception(
+          'Échec d\'ajout du jeu: ${response.statusCode} - ${responseData.body}');
+    } catch (e) {
+      print('Erreur lors de l\'ajout du jeu: $e');
+      rethrow;
     }
-
-    // Joindre les programmes JSON si fournis
-    if (data['programmes'] != null && data['programmes'] is List) {
-      final programmes = (data['programmes'] as List).map((p) {
-        return {
-          'id_jour': p['id_jour'],
-          'heure': (p['heure'] as String).replaceAll('h', ':'),
-        };
-      }).toList();
-      request.fields['programmes'] = jsonEncode(programmes);
-    }
-
-    final streamed = await request.send();
-    final response = await http.Response.fromStream(streamed);
-
-    if (response.statusCode == 201) {
-      final body = jsonDecode(response.body) as Map<String, dynamic>;
-      final id = (body['data'] as Map<String, dynamic>)['id_jeux'] as int;
-      return id;
-    }
-
-    throw Exception(
-        'Échec d\'ajout du jeu: ${response.statusCode} - ${response.body}');
   }
 
   /// Supprimer un jeu par son ID
@@ -149,23 +145,28 @@ class GameService {
   }
 
   /// Mettre à jour les programmations pour un jeu donné (remplacer tout)
-  Future updateGameSchedules(
-      int gameId, List<Map<String, dynamic>> schedules) async {
+  Future<bool> updateGameSchedules(int gameId, List<Map<String, dynamic>> schedules) async {
     try {
-      final uri = Uri.parse('${ApiConfig.baseUrl}jeux/$gameId/programmes');
-      final body = schedules.map((p) {
-        return {
-          'id_jour': p['id_jour'],
-          'heure': (p['heure'] as String).replaceAll('h', ':'),
-        };
-      }).toList();
+      if (gameId <= 0) {
+        throw Exception('ID du jeu invalide');
+      }
 
-      final res = await http.put(
+      final uri = Uri.parse('${ApiConfig.baseUrl}jeux/$gameId/programme');
+      final response = await http.put(
         uri,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'programmes': body}),
+        body: jsonEncode({'programme': schedules}),
       );
-      return res.statusCode == 200;
+
+      if (response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        if (decoded['success'] == true || decoded['status'] == 'success') {
+          return true;
+        }
+      }
+
+      print('Erreur API ${response.statusCode}: ${response.body}');
+      return false;
     } catch (e) {
       print('Erreur updateGameSchedules: $e');
       return false;
@@ -196,6 +197,67 @@ class GameService {
     }).toList();
 
     return updateGameSchedules(int.parse(gameId.toString()), formattedSchedules);
+  }
+
+  /// Mettre à jour un jeu existant
+  Future<bool> updateGame(int gameId, Map<String, dynamic> data) async {
+    try {
+      final uri = Uri.parse('${ApiConfig.baseUrl}jeux/$gameId');
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['_method'] = 'PUT';
+
+      // Ajout des champs texte seulement s'ils sont présents dans data
+      if (data['nom_jeux'] != null) request.fields['nom_jeux'] = data['nom_jeux'].toString();
+      if (data['lieu_jeux'] != null) request.fields['lieu_jeux'] = data['lieu_jeux'].toString();
+      if (data['duree_jeux'] != null) request.fields['duree_jeux'] = data['duree_jeux'].toString();
+      if (data['tarif_enf_jeux'] != null) request.fields['tarif_enf_jeux'] = data['tarif_enf_jeux'].toString();
+      if (data['tarif_adu_jeux'] != null) request.fields['tarif_adu_jeux'] = data['tarif_adu_jeux'].toString();
+      if (data['age_mini'] != null) request.fields['age_mini'] = data['age_mini'].toString();
+
+      // Gestion de l'image
+      if (data['logo_jeux'] != null && data['logo_jeux'] is File) {
+        final file = data['logo_jeux'] as File;
+        final stream = http.ByteStream(file.openRead());
+        final length = await file.length();
+        
+        final multipartFile = http.MultipartFile(
+          'image',
+          stream,
+          length,
+          filename: file.path.split('/').last,
+        );
+        request.files.add(multipartFile);
+      }
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        final decodedResponse = jsonDecode(response.body);
+        return decodedResponse['success'] == true || decodedResponse['status'] == 'success';
+      }
+
+      print('Erreur lors de la mise à jour du jeu: ${response.statusCode} - ${response.body}');
+      return false;
+    } catch (e) {
+      print('Erreur updateGame: $e');
+      throw Exception('Impossible de mettre à jour le jeu: $e');
+    }
+  }
+
+  /// Récupérer les détails d'un jeu
+  Future<Map<String, dynamic>?> fetchGameDetails(int gameId) async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}jeux/$gameId'));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        return decoded['data'] as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print('Erreur lors de la récupération des détails du jeu: $e');
+      return null;
+    }
   }
 }
 

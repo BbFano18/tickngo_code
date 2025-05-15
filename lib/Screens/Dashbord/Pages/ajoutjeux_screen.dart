@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../API/api_config.dart';
 import '../Services/ajoutjeux_service.dart';
 
 class GameDashboard extends StatefulWidget {
@@ -87,16 +88,8 @@ class _GameDashboardState extends State<GameDashboard> {
                   Expanded(
                     child: AddGameForm(
                       centreId: _userId!,
-                      onSuccess: (int gameId) {
-                        Navigator.pop(context);
-                        _loadGames();
-                        // Naviguer vers l'écran de programmation
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => AddScheduleScreen(gameId: gameId),
-                          ),
-                        );
+                      onSuccess: (int gameId) async {
+                        await _loadGames();
                       },
                     ),
                   ),
@@ -175,8 +168,66 @@ class _GameDashboardState extends State<GameDashboard> {
   }
 
   void _editGame(Map<String, dynamic> game) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('En cours de conception ... ')),
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.6,
+          maxChildSize: 0.95,
+          builder: (_, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        Text(
+                          'Modifier le Jeu',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).primaryColor,
+                          ),
+                        ),
+                        SizedBox(width: 48),
+                      ],
+                    ),
+                  ),
+                  Divider(),
+                  Expanded(
+                    child: AddGameForm(
+                      centreId: _userId!,
+                      gameToEdit: game,
+                      onSuccess: (int gameId) async {
+                        await _loadGames();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -283,7 +334,7 @@ class _GameDashboardState extends State<GameDashboard> {
             Text('Lieu: ${game['lieu_jeux'] ?? 'N/A'}'),
             Text('Durée: ${game['duree_jeux'] ?? 'Non spécifiée'}'),
             Text('Tarif: ${game['tarif'] ?? 'N/A'} FCFA'),
-            if (game['age_mini'] != null) Text('Âge minimum: ${game['age_mini']} ans'),
+            if (game['age_mini'] != null) Text('Âge minimum: ${game['age_mini']}'),
           ],
         ),
         trailing: Row(
@@ -333,8 +384,13 @@ class _GameDashboardState extends State<GameDashboard> {
 class AddGameForm extends StatefulWidget {
   final Function(int gameId) onSuccess;
   final int centreId;
+  final Map<String, dynamic>? gameToEdit;
 
-  const AddGameForm({required this.onSuccess, required this.centreId});
+  const AddGameForm({
+    required this.onSuccess,
+    required this.centreId,
+    this.gameToEdit,
+  });
 
   @override
   _AddGameFormState createState() => _AddGameFormState();
@@ -343,6 +399,7 @@ class AddGameForm extends StatefulWidget {
 class _AddGameFormState extends State<AddGameForm> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _lieuController = TextEditingController();
   final _priceChildController = TextEditingController();
   final _priceAdultController = TextEditingController();
   final _ageController = TextEditingController();
@@ -350,6 +407,7 @@ class _AddGameFormState extends State<AddGameForm> {
   String? _selectedDuration;
   File? _imageFile;
   String? _imagePath;
+  String? _currentImageUrl;
   bool _isLoading = false;
 
   final GameService _gameService = GameService();
@@ -360,6 +418,20 @@ class _AddGameFormState extends State<AddGameForm> {
   @override
   void initState() {
     super.initState();
+    if (widget.gameToEdit != null) {
+      _loadExistingGameData();
+    }
+  }
+
+  void _loadExistingGameData() {
+    final game = widget.gameToEdit!;
+    _nameController.text = game['nom_jeux'] ?? '';
+    _lieuController.text = game['lieu_jeux'] ?? '';
+    _selectedDuration = game['duree_jeux']?.replaceAll('min', '') ?? '';
+    _priceChildController.text = game['tarif_enf_jeux']?.toString() ?? '0';
+    _priceAdultController.text = game['tarif_adu_jeux']?.toString() ?? '0';
+    _ageController.text = game['age_mini']?.replaceAll('ans', '') ?? '';
+    _currentImageUrl = game['logo_jeux'];
   }
 
   Future<void> _pickImage() async {
@@ -368,12 +440,12 @@ class _AddGameFormState extends State<AddGameForm> {
       setState(() {
         _imageFile = File(pickedFile.path);
         _imagePath = pickedFile.path;
+        _currentImageUrl = null;
       });
     }
   }
 
   void _submitForm() async {
-    debugPrint("Entrée dans la fct");
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedDuration == null) {
@@ -381,8 +453,8 @@ class _AddGameFormState extends State<AddGameForm> {
       return;
     }
 
-    if (_imageFile == null) {
-      _showErrorSnackBar('Veuillez sélectionner une image');
+    if (_imageFile == null && _currentImageUrl == null && widget.gameToEdit == null) {
+      _showErrorSnackBar('Veuillez sélectionner une image pour le jeu');
       return;
     }
 
@@ -391,35 +463,49 @@ class _AddGameFormState extends State<AddGameForm> {
     try {
       final data = {
         'nom_jeux': _nameController.text,
-        'duree_jeux': _selectedDuration,
+        'lieu_jeux': _lieuController.text,
+        'duree_jeux': '${_selectedDuration}min',
         'id_centre': widget.centreId,
         'tarif_enf_jeux': int.parse(_priceChildController.text),
         'tarif_adu_jeux': int.parse(_priceAdultController.text),
-        'age_mini': _ageController.text.isNotEmpty ? int.parse(_ageController.text) : null,
-        'logo_jeux': _imagePath,
+        'age_mini': _ageController.text.isNotEmpty ? '${_ageController.text}ans' : null,
       };
 
-      final gameId = await _gameService.addGame(data);
+      if (_imageFile != null) {
+        data['logo_jeux'] = _imageFile;
+      }
 
-      if (gameId > 0) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Jeu ajouté avec succès'), backgroundColor: Colors.green),
-        );
-
-        widget.onSuccess(gameId.toInt());
-
-        // Redirection vers AddScheduleScreen avec l'ID du jeu
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AddScheduleScreen(gameId: gameId),
-          ),
-        );
+      if (widget.gameToEdit != null) {
+        final success = await _gameService.updateGame(widget.gameToEdit!['id_jeux'], data);
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Jeu modifié avec succès'), backgroundColor: Colors.green),
+          );
+          widget.onSuccess(widget.gameToEdit!['id_jeux']);
+          Navigator.pop(context);
+        } else {
+          _showErrorSnackBar('Échec de la modification du jeu');
+        }
       } else {
-        _showErrorSnackBar('Échec de l\'ajout du jeu');
+        final gameId = await _gameService.addGame(data);
+        if (gameId > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Jeu ajouté avec succès'), backgroundColor: Colors.green),
+          );
+          widget.onSuccess(gameId);
+          Navigator.pop(context);
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AddScheduleScreen(gameId: gameId),
+            ),
+          );
+        } else {
+          _showErrorSnackBar('Échec de l\'ajout du jeu');
+        }
       }
     } catch (e) {
-      debugPrint('Erreur: ${e.toString()}');
+      print('Erreur: ${e.toString()}');
       _showErrorSnackBar('Erreur: ${e.toString()}');
     } finally {
       setState(() => _isLoading = false);
@@ -441,20 +527,103 @@ class _AddGameFormState extends State<AddGameForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildImagePicker(),
+            // Section Image
+            GestureDetector(
+              onTap: _pickImage,
+              child: Container(
+                height: 150,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[400]!, width: 1),
+                ),
+                child: _buildImageWidget(),
+              ),
+            ),
             SizedBox(height: 20),
+
+            // Section Informations générales
             _buildSectionTitle('Informations générales'),
-            _buildTextField(_nameController, 'Nom du jeu', Icons.sports_esports, true),
+            TextFormField(
+              controller: _nameController,
+              decoration: InputDecoration(
+                labelText: 'Nom du jeu',
+                prefixIcon: Icon(Icons.sports_esports, color: Colors.deepPurple),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              validator: (value) =>
+              value?.isEmpty == true ? 'Ce champ est requis' : null,
+            ),
             SizedBox(height: 16),
+
+            TextFormField(
+              controller: _lieuController,
+              decoration: InputDecoration(
+                labelText: 'Lieu du jeu',
+                prefixIcon: Icon(Icons.location_on, color: Colors.deepPurple),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              validator: (value) =>
+              value?.isEmpty == true ? 'Ce champ est requis' : null,
+            ),
+            SizedBox(height: 16),
+
             _buildDurationDropdown(),
-            SizedBox(height: 20),
-            _buildSectionTitle('Tarification'),
-            _buildTextField(_priceChildController, 'Tarif enfant (FCFA)', Icons.child_care, true, type: TextInputType.number),
             SizedBox(height: 16),
-            _buildTextField(_priceAdultController, 'Tarif adulte (FCFA)', Icons.person, true, type: TextInputType.number),
+
+            // Section Tarifs
+            _buildSectionTitle('Configuration des tarifs'),
+            TextFormField(
+              controller: _priceChildController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Tarif enfant (FCFA)',
+                prefixIcon: Icon(Icons.child_care, color: Colors.deepPurple),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+                suffixText: 'FCFA',
+              ),
+              validator: (value) =>
+              value?.isEmpty == true ? 'Ce champ est requis' : null,
+            ),
             SizedBox(height: 16),
-            _buildTextField(_ageController, 'Âge minimum requis', Icons.cake, false, type: TextInputType.number),
+
+            TextFormField(
+              controller: _priceAdultController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Tarif adulte (FCFA)',
+                prefixIcon: Icon(Icons.person, color: Colors.deepPurple),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+                suffixText: 'FCFA',
+              ),
+              validator: (value) =>
+              value?.isEmpty == true ? 'Ce champ est requis' : null,
+            ),
+            SizedBox(height: 16),
+
+            TextFormField(
+              controller: _ageController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Âge minimum requis',
+                prefixIcon:
+                Icon(Icons.confirmation_number, color: Colors.deepPurple),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+                suffixText: 'ans',
+              ),
+            ),
             SizedBox(height: 32),
+
             _buildSubmitButton(),
             SizedBox(height: 20),
           ],
@@ -463,56 +632,42 @@ class _AddGameFormState extends State<AddGameForm> {
     );
   }
 
-  Widget _buildImagePicker() {
-    return GestureDetector(
-      onTap: _pickImage,
-      child: Container(
-        height: 150,
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey[400]!),
+  Widget _buildImageWidget() {
+    if (_imageFile != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Image.file(
+          _imageFile!,
+          fit: BoxFit.cover,
+          width: double.infinity,
         ),
-        child: _imageFile != null
-            ? ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.file(_imageFile!, fit: BoxFit.cover, width: double.infinity),
-        )
-            : Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey[600]),
-            SizedBox(height: 8),
-            Text('Ajouter une image', style: TextStyle(color: Colors.grey[700])),
-          ],
+      );
+    } else if (_currentImageUrl != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Image.network(
+          '${ApiConfig.baseUrl2}storage/${_currentImageUrl}',
+          fit: BoxFit.cover,
+          width: double.infinity,
+          errorBuilder: (_, __, ___) => _buildPlaceholder(),
         ),
-      ),
-    );
+      );
+    } else {
+      return _buildPlaceholder();
+    }
   }
 
-  Widget _buildTextField(
-      TextEditingController controller,
-      String label,
-      IconData icon,
-      bool required, {
-        TextInputType type = TextInputType.text,
-      }) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: type,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon, color: Colors.deepPurple),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        filled: true,
-        fillColor: Colors.white,
-      ),
-      validator: (value) {
-        if (required && (value == null || value.isEmpty)) {
-          return 'Ce champ est requis';
-        }
-        return null;
-      },
+  Widget _buildPlaceholder() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey[600]),
+        SizedBox(height: 8),
+        Text(
+          'Ajouter une image',
+          style: TextStyle(color: Colors.grey[700]),
+        ),
+      ],
     );
   }
 
@@ -652,47 +807,43 @@ class _AddScheduleScreenState extends State<AddScheduleScreen> {
       return;
     }
 
-    // Formatage des données pour l'API
-    final formatted = _scheduleItems.map((item) {
-      final day = item['day'] as Map<String, dynamic>;
-      final time = item['time'] as TimeOfDay;
+    setState(() => _isLoading = true);
 
-      // Créer une date de référence (aujourd'hui) avec l'heure sélectionnée
-      final now = DateTime.now();
-      final dateTime = DateTime(now.year, now.month, now.day, time.hour, time.minute);
-
-      return {
-        'game_id': widget.gameId,
-        'id_jour': day['id_jour'],
-        'heure': '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
-      };
-    }).toList();
-
-    // Envoyer à l'API
     try {
       final gameService = GameService();
+      final formatted = _scheduleItems.map((item) {
+        final day = item['day'] as Map<String, dynamic>;
+        final time = item['time'] as TimeOfDay;
+        return {
+          'id_jour': day['id_jour'],
+          'heure': '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+        };
+      }).toList();
 
-      // Utiliser directement updateGameSchedules car nous avons déjà le format attendu
-      final success = await gameService.updateGameSchedules(
-          widget.gameId!,
-          formatted.map((item) => {
-            'id_jour': item['id_jour'],
-            'heure': item['heure'],
-          }).toList()
-      );
+      final success = await gameService.updateGameSchedules(widget.gameId!, formatted);
 
       if (success) {
-        Navigator.popUntil(context, (r) => r.isFirst);
-      } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur lors de l\'enregistrement des séances')),
+          SnackBar(
+            content: Text('Programmation enregistrée avec succès'),
+            backgroundColor: Colors.green,
+          ),
         );
+        // Retourner à l'écran principal
+        Navigator.of(context).pop();
+      } else {
+        throw Exception('Échec de l\'enregistrement des séances');
       }
     } catch (e) {
       print('Erreur lors de la sauvegarde: $e');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Une erreur est survenue: $e')),
+        SnackBar(
+          content: Text('Erreur lors de l\'enregistrement: ${e.toString()}'),
+          backgroundColor: Colors.red,
+        ),
       );
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 

@@ -8,6 +8,9 @@ class Movie {
   final int? idFormat;
   final int? idLangue;
   final int? idClassif;
+  final int? tarifEnfantFilm;
+  final int? tarifAdulteFilm;
+  final int? tarifPremiere;
 
   // Nouveaux champs pour les libellés
   String? categorie;
@@ -26,6 +29,9 @@ class Movie {
     this.idFormat,
     this.idLangue,
     this.idClassif,
+    this.tarifEnfantFilm,
+    this.tarifAdulteFilm,
+    this.tarifPremiere,
     this.categorie,
     this.genre,
     this.format,
@@ -44,6 +50,9 @@ class Movie {
       idFormat: json['id_format'] as int?,
       idLangue: json['id_langue'] as int?,
       idClassif: json['id_classif'] as int?,
+      tarifEnfantFilm: json['tarif_enf_film'] as int?,
+      tarifAdulteFilm: json['tarif_adu_film'] as int?,
+      tarifPremiere: json['tarif_premiere'] as int?,
     );
   }
 

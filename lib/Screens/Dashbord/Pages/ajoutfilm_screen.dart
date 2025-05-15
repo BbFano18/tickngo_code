@@ -133,7 +133,7 @@ class _MovieDashboardState extends State<MovieDashboard> {
       builder: (context) {
         return AlertDialog(
           title: Text('Confirmer la suppression'),
-          content: Text('Êtes-vous sûr de vouloir supprimer ce film?'),
+          content: Text('Êtes-vous sûr de vouloir supprimer ce film ?'),
           actions: [
             TextButton(
               child: Text('Annuler'),
@@ -149,30 +149,213 @@ class _MovieDashboardState extends State<MovieDashboard> {
     ) ?? false;
 
     if (!confirm) return;
+    
     setState(() => _isLoading = true);
-    /*try {
-      final success = await _movieService.deleteMovie(id);
-      final message = success ? 'Film supprimé avec succès' : 'Échec de la suppression';
-      final color = success ? Colors.green : Colors.red;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: color),
-      );
-      if (success) _loadMovies();
+    try {
+      await _movieService.deleteMovie(id);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Film supprimé avec succès'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      
+      await _loadMovies();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().replaceAll('Exception: ', '')),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } finally {
-      setState(() => _isLoading = false);
-    }*/
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
   }
 
   void _editMovie(Map<String, dynamic> movie) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Fonctionnalité d\'édition à venir')),
+    final formKey = GlobalKey<FormState>();
+    final nameController = TextEditingController(text: movie['nom_film']);
+    final durationController = TextEditingController(text: movie['duree_film']?.toString());
+    final tarifEnfantController = TextEditingController(text: movie['tarif_enf_film']?.toString() ?? '0');
+    final tarifAdulteController = TextEditingController(text: movie['tarif_adu_film']?.toString() ?? '0');
+    final tarifPremiereController = TextEditingController(text: movie['tarif_premiere']?.toString() ?? '0');
+    String? currentImageUrl = movie['image_url'];
+    int? selectedFormatId = movie['id_format'];
+    int? selectedGenreId = movie['id_genre'];
+    int? selectedLanguageId = movie['id_langue'];
+    int? selectedClassificationId = movie['id_classif'];
+    int? selectedCategoryId = movie['id_cat_fil'];
+    File? imageFile;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
+            top: 16,
+            left: 16,
+            right: 16,
+          ),
+          child: SingleChildScrollView(
+            child: Form(
+              key: formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Image picker
+                  GestureDetector(
+                    onTap: () async {
+                      final ImagePicker picker = ImagePicker();
+                      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+                      if (image != null) {
+                        setState(() {
+                          imageFile = File(image.path);
+                          currentImageUrl = null;
+                        });
+                      }
+                    },
+                    child: Container(
+                      height: 150,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey[400]!),
+                      ),
+                      child: imageFile != null 
+                          ? Image.file(imageFile!, fit: BoxFit.cover)
+                          : (currentImageUrl != null
+                              ? Image.network(currentImageUrl!, fit: BoxFit.cover)
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey[600]),
+                                    SizedBox(height: 8),
+                                    Text('Modifier l\'image', style: TextStyle(color: Colors.grey[600])),
+                                  ],
+                                )),
+                    ),
+                  ),
+                  SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: 'Nom du film',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+                  SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: durationController,
+                    decoration: InputDecoration(
+                      labelText: 'Durée (minutes)',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      suffixText: 'min',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: tarifEnfantController,
+                    decoration: InputDecoration(
+                      labelText: 'Tarif Enfant',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      suffixText: 'FCFA',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: tarifAdulteController,
+                    decoration: InputDecoration(
+                      labelText: 'Tarif Adulte',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      suffixText: 'FCFA',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  SizedBox(height: 16),
+
+                  TextFormField(
+                    controller: tarifPremiereController,
+                    decoration: InputDecoration(
+                      labelText: 'Tarif Première',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                      suffixText: 'FCFA',
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  SizedBox(height: 24),
+
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepPurple,
+                      minimumSize: Size(double.infinity, 50),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    onPressed: () async {
+                      try {
+                        final data = {
+                          'nom_film': nameController.text.isNotEmpty ? nameController.text : movie['nom_film'],
+                          'duree_film': durationController.text.isNotEmpty ? durationController.text : movie['duree_film'],
+                          'tarif_enf_film': tarifEnfantController.text.isNotEmpty ? int.parse(tarifEnfantController.text) : movie['tarif_enf_film'],
+                          'tarif_adu_film': tarifAdulteController.text.isNotEmpty ? int.parse(tarifAdulteController.text) : movie['tarif_adu_film'],
+                          'tarif_premiere': tarifPremiereController.text.isNotEmpty ? int.parse(tarifPremiereController.text) : movie['tarif_premiere'],
+                          'id_format': selectedFormatId ?? movie['id_format'],
+                          'id_genre': selectedGenreId ?? movie['id_genre'],
+                          'id_langue': selectedLanguageId ?? movie['id_langue'],
+                          'id_classif': selectedClassificationId ?? movie['id_classif'],
+                          'id_cat_fil': selectedCategoryId ?? movie['id_cat_fil'],
+                        };
+
+                        if (imageFile != null) {
+                          data['image_url'] = imageFile;
+                        }
+
+                        final success = await _movieService.updateMovie(movie['id_film'], data);
+                        
+                        if (success) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Film mis à jour avec succès'), backgroundColor: Colors.green),
+                          );
+                          Navigator.pop(context);
+                          _loadMovies(); // Recharger la liste après la mise à jour
+                        } else {
+                          throw Exception('Échec de la mise à jour');
+                        }
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Erreur: ${e.toString()}'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    },
+                    child: Text('Mettre à jour', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  ),
+                  SizedBox(height: 16),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -328,6 +511,10 @@ class _AddMovieFormState extends State<AddMovieForm> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _durationController = TextEditingController();
+  final TextEditingController _tarifEnfantController = TextEditingController();
+  final TextEditingController _tarifAdulteController = TextEditingController();
+  final TextEditingController _tarifPremiereController = TextEditingController();
+  final TextEditingController _prixController = TextEditingController();
   int? _selectedFormatId;
   int? _selectedGenreId;
   int? _selectedLanguageId;
@@ -372,92 +559,236 @@ class _AddMovieFormState extends State<AddMovieForm> {
       child: ListView(
         padding: EdgeInsets.all(16),
         children: [
-          _buildTextField(_nameController, 'Titre', Icons.movie),
+          // Section Image
+          _buildSectionTitle('Image du film'),
+          _buildImagePicker(),
+          SizedBox(height: 24),
+
+          // Section Informations générales
+          _buildSectionTitle('Informations générales'),
+          TextFormField(
+            controller: _nameController,
+            decoration: InputDecoration(
+              labelText: 'Nom du film',
+              prefixIcon: Icon(Icons.movie, color: Colors.deepPurple),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Veuillez entrer le nom du film';
+              }
+              return null;
+            },
+          ),
           SizedBox(height: 16),
-          _buildTextField(_durationController, 'Durée (Heure)', Icons.timer, keyboardType: TextInputType.number),
+
+          TextFormField(
+            controller: _durationController,
+            decoration: InputDecoration(
+              labelText: 'Durée (minutes)',
+              prefixIcon: Icon(Icons.timer, color: Colors.deepPurple),
+              suffixText: 'min',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            keyboardType: TextInputType.number,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Veuillez entrer la durée';
+              }
+              if (int.tryParse(value) == null) {
+                return 'Veuillez entrer un nombre valide';
+              }
+              return null;
+            },
+          ),
+          SizedBox(height: 24),
+
+          // Section Configuration des tarifs
+          _buildSectionTitle('Configuration des tarifs'),
+          TextFormField(
+            controller: _tarifEnfantController,
+            decoration: InputDecoration(
+              labelText: 'Tarif Enfant',
+              prefixIcon: Icon(Icons.child_care, color: Colors.deepPurple),
+              suffixText: 'FCFA',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            keyboardType: TextInputType.number,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Veuillez entrer le tarif enfant';
+              }
+              if (int.tryParse(value) == null) {
+                return 'Veuillez entrer un nombre valide';
+              }
+              return null;
+            },
+          ),
           SizedBox(height: 16),
-          _buildDropdown('Format', _format, 'id_format', 'lib_format', (val) => _selectedFormatId = val),
+
+          TextFormField(
+            controller: _tarifAdulteController,
+            decoration: InputDecoration(
+              labelText: 'Tarif Adulte',
+              prefixIcon: Icon(Icons.person, color: Colors.deepPurple),
+              suffixText: 'FCFA',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            keyboardType: TextInputType.number,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Veuillez entrer le tarif adulte';
+              }
+              if (int.tryParse(value) == null) {
+                return 'Veuillez entrer un nombre valide';
+              }
+              return null;
+            },
+          ),
           SizedBox(height: 16),
-          _buildDropdown('Genre', _genre, 'id_genre', 'lib_genre', (val) => _selectedGenreId = val),
+
+          TextFormField(
+            controller: _tarifPremiereController,
+            decoration: InputDecoration(
+              labelText: 'Tarif Première',
+              prefixIcon: Icon(Icons.star, color: Colors.deepPurple),
+              suffixText: 'FCFA',
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            keyboardType: TextInputType.number,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Veuillez entrer le tarif première';
+              }
+              if (int.tryParse(value) == null) {
+                return 'Veuillez entrer un nombre valide';
+              }
+              return null;
+            },
+          ),
+          SizedBox(height: 24),
+
+          // Section Caractéristiques
+          _buildSectionTitle('Caractéristiques du film'),
+          _buildDropdown(
+            items: _format,
+            value: _selectedFormatId,
+            onChanged: (value) => setState(() => _selectedFormatId = value),
+            labelText: 'Format',
+            validator: (value) => value == null ? 'Veuillez sélectionner un format' : null,
+            idField: 'id_format',
+            labelField: 'lib_format',
+            icon: Icons.aspect_ratio,
+          ),
           SizedBox(height: 16),
-          _buildDropdown('Langue', _language, 'id_langue', 'lib_langue', (val) => _selectedLanguageId = val),
+
+          _buildDropdown(
+            items: _genre,
+            value: _selectedGenreId,
+            onChanged: (value) => setState(() => _selectedGenreId = value),
+            labelText: 'Genre',
+            validator: (value) => value == null ? 'Veuillez sélectionner un genre' : null,
+            idField: 'id_genre',
+            labelField: 'lib_genre',
+            icon: Icons.category,
+          ),
           SizedBox(height: 16),
-          _buildDropdown('Classification', _classification, 'id_classif', 'lib_classif', (val) => _selectedClassificationId = val),
+
+          _buildDropdown(
+            items: _language,
+            value: _selectedLanguageId,
+            onChanged: (value) => setState(() => _selectedLanguageId = value),
+            labelText: 'Langue',
+            validator: (value) => value == null ? 'Veuillez sélectionner une langue' : null,
+            idField: 'id_langue',
+            labelField: 'lib_langue',
+            icon: Icons.language,
+          ),
           SizedBox(height: 16),
-          _buildDropdown('Catégorie', _categorie_film, 'id_cat_fil', 'lib_cat_fil', (val) => _selectedCategoryId = val),
+
+          _buildDropdown(
+            items: _classification,
+            value: _selectedClassificationId,
+            onChanged: (value) => setState(() => _selectedClassificationId = value),
+            labelText: 'Classification',
+            validator: (value) => value == null ? 'Veuillez sélectionner une classification' : null,
+            idField: 'id_classif',
+            labelField: 'lib_classif',
+            icon: Icons.local_offer,
+          ),
           SizedBox(height: 16),
-          _buildImageUploadField(),
+
+          _buildDropdown(
+            items: _categorie_film,
+            value: _selectedCategoryId,
+            onChanged: (value) => setState(() => _selectedCategoryId = value),
+            labelText: 'Catégorie',
+            validator: (value) => value == null ? 'Veuillez sélectionner une catégorie' : null,
+            idField: 'id_cat_fil',
+            labelField: 'lib_cat_fil',
+            icon: Icons.movie_filter,
+          ),
           _buildSubmitButton(),
         ],
       ),
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label, IconData icon,
-      {TextInputType keyboardType = TextInputType.text}) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(labelText: label,
-        prefixIcon: Icon(icon, color: Colors.deepPurple),
-        filled: true,
-        fillColor: Colors.grey[200],
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+          color: Colors.deepPurple,
+        ),
       ),
-      validator: (val) {
-        if (val == null || val.isEmpty) return 'Veuillez entrer $label';
-        if (label.contains('Durée') && int.tryParse(val) == null) {
-          return 'Nombre invalide';
-        }
-        return null;
-      },
     );
   }
 
-  Widget _buildDropdown(String label, List<Map<String, dynamic>> items, String valueKey, String labelKey, ValueChanged<int?> onChanged) {
-    return DropdownButtonFormField<int>(
-      decoration: InputDecoration(
-        labelText: label,
-        filled: true,
-        fillColor: Colors.grey[200],
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide.none),
-      ),
-      items: items.map((item) => DropdownMenuItem<int>(value: item[valueKey] as int, child: Text(item[labelKey] ?? ''))).toList(),
-      onChanged: onChanged,
-      value: null,
-      isExpanded: true,
-      validator: (val) => val == null ? 'Veuillez sélectionner $label' : null,
-    );
-  }
-
-  Widget _buildImageUploadField() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Image', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-        SizedBox(height: 8),
-        GestureDetector(
-          onTap: () => _pickImage(),
-          child: Container(
-            height: 120,
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: _imagePath == null
-                ? Center(
-              child: Column(
+  Widget _buildImagePicker() {
+    return GestureDetector(
+      onTap: _pickImage,
+      child: Container(
+        height: 150,
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[400]!, width: 1),
+        ),
+        child: _imagePath == null
+            ? Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.camera_alt, size: 40, color: Colors.grey[600]),
-                  Text('Sélectionner une image', style: TextStyle(color: Colors.grey[600])),
+                  Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey[600]),
+                  SizedBox(height: 8),
+                  Text(
+                    'Ajouter une image',
+                    style: TextStyle(color: Colors.grey[700]),
+                  ),
                 ],
+              )
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(11),
+                child: Image.file(
+                  File(_imagePath!),
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                ),
               ),
-            )
-                : Image.file(File(_imagePath!), width: double.infinity, fit: BoxFit.cover),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -479,27 +810,45 @@ class _AddMovieFormState extends State<AddMovieForm> {
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.deepPurple,
           foregroundColor: Colors.white,
-          padding: EdgeInsets.symmetric(vertical: 14),
-          textStyle: TextStyle(fontSize: 18),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          minimumSize: Size(double.infinity, 50),
         ),
         onPressed: _isLoading ? null : _submitForm,
         child: _isLoading
-            ? CircularProgressIndicator(color: Colors.white)
-            : Text('Ajouter le film'),
+            ? CircularProgressIndicator(valueColor: AlwaysStoppedAnimation<Color>(Colors.white))
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text(
+                    'Créer le film et programmer',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }
 
   Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      print('Validation du formulaire échouée');
+      return;
+    }
     if (_imagePath == null) {
-      _showErrorSnackbar('Veuillez sélectionner une image');
+      print('Aucune image sélectionnée');
+      _showErrorSnackBar('Veuillez sélectionner une image');
       return;
     }
 
     setState(() => _isLoading = true);
     try {
+      print('Préparation des données du film...');
       final movieData = {
         'nom_film': _nameController.text,
         'duree_film': int.parse(_durationController.text),
@@ -509,32 +858,124 @@ class _AddMovieFormState extends State<AddMovieForm> {
         'id_langue': _selectedLanguageId!,
         'id_classif': _selectedClassificationId!,
         'id_cat_fil': _selectedCategoryId!,
-        'image_url': _imagePath!,
+        'image_url': File(_imagePath!),
+        'tarif_enf_film': int.parse(_tarifEnfantController.text),
+        'tarif_adu_film': int.parse(_tarifAdulteController.text),
+        'tarif_premiere': int.parse(_tarifPremiereController.text),
+        'prix': int.parse(_prixController.text),
       };
+      print('Données du film préparées : ${movieData.toString()}');
 
+      print('Appel du service pour ajouter le film...');
       final movieId = await _movieService.addMovie(movieData);
-      if (!mounted) return;
+      print('ID du film retourné : $movieId');
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => AddProgrammeScreen(movieId: movieId),
-        ),
-      );
-      widget.onSuccess();
+      if (movieId > 0) {
+        if (!mounted) return;
+        print('Film ajouté avec succès, navigation vers la programmation...');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Film ajouté avec succès'), backgroundColor: Colors.green),
+        );
+        widget.onSuccess();
+        Navigator.of(context).pop();
+        
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AddProgrammeScreen(movieId: movieId),
+          ),
+        );
+      } else {
+        print('Échec de l\'ajout du film : ID invalide ($movieId)');
+        throw Exception('Échec de l\'ajout du film');
+      }
     } catch (e) {
-      _showErrorSnackbar('Erreur: ${e.toString()}');
+      print('Exception dans _submitForm: ${e.toString()}');
+      if (!mounted) return;
+      _showErrorSnackBar('Erreur: ${e.toString()}');
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
-  void _showErrorSnackbar(String message) {
+  void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
+
+  Widget _buildDropdown({
+    required List<Map<String, dynamic>> items,
+    required int? value,
+    required ValueChanged<int?> onChanged,
+    required String labelText,
+    required String? Function(int?) validator,
+    required String idField,
+    required String labelField,
+    required IconData icon,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<int>(
+          decoration: InputDecoration(
+            labelText: labelText,
+            prefixIcon: Icon(icon, color: Colors.deepPurple),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          items: items.map((item) {
+            return DropdownMenuItem<int>(
+              value: item[idField] as int,
+              child: Text(item[labelField] ?? ''),
+            );
+          }).toList(),
+          onChanged: (val) {
+            onChanged(val);
+            if (idField == 'id_cat_fil' && val != null) {
+              _prixController.clear();
+            }
+          },
+          value: value,
+          isExpanded: true,
+          validator: validator,
+        ),
+        if (idField == 'id_cat_fil' && value != null) ...[
+          SizedBox(height: 16),
+          TextFormField(
+            controller: _prixController,
+            decoration: InputDecoration(
+              labelText: 'Prix de la catégorie',
+              prefixIcon: Icon(Icons.attach_money, color: Colors.deepPurple),
+              suffixText: 'FCFA',
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            keyboardType: TextInputType.number,
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Veuillez entrer le prix de la catégorie';
+              }
+              if (int.tryParse(value) == null) {
+                return 'Veuillez entrer un nombre valide';
+              }
+              return null;
+            },
+          ),
+        ],
+      ],
+    );
+  }
 }
+
 //Programmation
 class AddProgrammeScreen extends StatefulWidget {
   final dynamic movieId;
@@ -731,20 +1172,26 @@ class _AddProgrammeScreenState extends State<AddProgrammeScreen> {
               borderSide: BorderSide.none,
             ),
           ),
-          items: _jour
-              .map((j) => DropdownMenuItem<int>(
-            value: j['id_jour'] as int,
-            child: Text(j['lib_jour'] ?? ''),
-          ))
-              .toList(),
+          items: _jour.map((j) {
+            return DropdownMenuItem<int>(
+              value: j['id_jour'] as int,
+              child: Text(j['lib_jour'] ?? ''),
+            );
+          }).toList(),
           onChanged: (val) {
-            setState(() {
-              _selectedDayId = val;
-              _selectedDayLabel = _jour.firstWhere((element) => element['id_jour'] == val)['lib_jour'];
-            });
+            if (val != null) {
+              setState(() {
+                _selectedDayId = val;
+                _selectedDayLabel = _jour.firstWhere(
+                  (element) => element['id_jour'] == val,
+                  orElse: () => {'lib_jour': ''},
+                )['lib_jour'];
+              });
+            }
           },
           value: _selectedDayId,
           isExpanded: true,
+          hint: Text('Sélectionnez un jour'),
         ),
         SizedBox(height: 16),
         _buildTimeSelector(),

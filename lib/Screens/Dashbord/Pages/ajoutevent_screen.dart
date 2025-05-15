@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import '../../../API/api_config.dart';
 import '../../../Core/helpers/snack_bar_helper.dart';
 import '../../../Core/preferences.dart';
 import '../Services/ajoutevent_service.dart';
@@ -160,7 +161,68 @@ class _EventDashboardState extends State<EventDashboard> {
   }
 
   void _editEvent(Map<String, dynamic> event) {
-    SnackBarHelper.showSuccess(context, 'En cours de conception ... ');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.6,
+          maxChildSize: 0.95,
+          builder: (_, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        Text(
+                          'Modifier l\'Événement',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).primaryColor,
+                          ),
+                        ),
+                        SizedBox(width: 48),
+                      ],
+                    ),
+                  ),
+                  Divider(),
+                  Expanded(
+                    child: AddEventForm(
+                      centreId: _userId!,
+                      eventToEdit: event,
+                      onSuccess: () {
+                        Navigator.pop(context);
+                        _loadEvents();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -300,8 +362,13 @@ class _EventDashboardState extends State<EventDashboard> {
 class AddEventForm extends StatefulWidget {
   final Function onSuccess;
   final int centreId;
+  final Map<String, dynamic>? eventToEdit;
 
-  AddEventForm({required this.onSuccess, required this.centreId});
+  const AddEventForm({
+    required this.onSuccess,
+    required this.centreId,
+    this.eventToEdit,
+  });
 
   @override
   _AddEventFormState createState() => _AddEventFormState();
@@ -314,113 +381,189 @@ class _AddEventFormState extends State<AddEventForm> {
   final _tarifStandardController = TextEditingController();
   final _tarifVIPController = TextEditingController();
   final _tarifVVIPController = TextEditingController();
-  final EventService _eventService = EventService();
-
-  final _imagePicker = ImagePicker();
-
-  bool _hasTarifStandard = true;
-  bool _hasTarifVIP = false;
-  bool _hasTarifVVIP = false;
-  bool _isLoading = false;
 
   DateTime? _selectedDate;
   File? _imageFile;
   String? _imagePath;
+  String? _currentImageUrl;
+  bool _isLoading = false;
 
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate ?? DateTime.now(),
-      firstDate: DateTime.now(),
-      lastDate: DateTime(2101),
-      builder: (context, child) {
-        return Theme(
-          data: ThemeData.light().copyWith(
-            colorScheme: ColorScheme.light(
-              primary: Colors.deepPurple,
-              onPrimary: Colors.white,
-              surface: Colors.white,
-              onSurface: Colors.black,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
+  bool _hasTarifStandard = true;
+  bool _hasTarifVIP = false;
+  bool _hasTarifVVIP = false;
 
-    if (picked != null && picked != _selectedDate) {
-      setState(() {
-        _selectedDate = picked;
-      });
+  final EventService _eventService = EventService();
+  final _imagePicker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.eventToEdit != null) {
+      _loadExistingEventData();
+    }
+  }
+
+  void _loadExistingEventData() {
+    final event = widget.eventToEdit!;
+    _nameController.text = event['nom_event'] ?? '';
+    _lieuController.text = event['lieu_event'] ?? '';
+
+    // Gestion de la date
+    if (event['date_event'] != null) {
+      _selectedDate = DateTime.parse(event['date_event']);
+    }
+
+    // Gestion des tarifs
+    if (event['tarif_standard'] != null) {
+      _tarifStandardController.text = event['tarif_standard'].toString();
+      _hasTarifStandard = true;
+    }
+    if (event['tarif_VIP'] != null) {
+      _tarifVIPController.text = event['tarif_VIP'].toString();
+      _hasTarifVIP = true;
+    }
+    if (event['tarif_VVIP'] != null) {
+      _tarifVVIPController.text = event['tarif_VVIP'].toString();
+      _hasTarifVVIP = true;
+    }
+
+    // Gestion de l'image
+    if (event['image_url'] != null) {
+      _currentImageUrl = event['image_url'];
     }
   }
 
   Future<void> _pickImage() async {
     final pickedFile = await _imagePicker.pickImage(source: ImageSource.gallery);
-
     if (pickedFile != null) {
       setState(() {
         _imageFile = File(pickedFile.path);
         _imagePath = pickedFile.path;
+        _currentImageUrl = null; // Effacer l'ancienne image
       });
     }
   }
 
-  void _submitForm(BuildContext ctx) async {
+  void _submitForm() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedDate == null) {
-      SnackBarHelper.showError(context, 'Veuillez sélectionner une date pour l\'événement');
+      _showErrorSnackBar('Veuillez sélectionner une date pour l\'événement');
       return;
     }
 
     if (_hasTarifStandard && _tarifStandardController.text.isEmpty) {
-      SnackBarHelper.showError(context, 'Veuillez entrer un tarif standard');
+      _showErrorSnackBar('Veuillez entrer un tarif standard');
       return;
     }
 
     if (_hasTarifVIP && _tarifVIPController.text.isEmpty) {
-      SnackBarHelper.showError(context, 'Veuillez entrer un tarif VIP');
+      _showErrorSnackBar('Veuillez entrer un tarif VIP');
       return;
     }
 
     if (_hasTarifVVIP && _tarifVVIPController.text.isEmpty) {
-      SnackBarHelper.showError(context, 'Veuillez entrer un tarif VVIP');
+      _showErrorSnackBar('Veuillez entrer un tarif VVIP');
+      return;
+    }
+
+    if (_imageFile == null && _currentImageUrl == null && widget.eventToEdit == null) {
+      _showErrorSnackBar('Veuillez sélectionner une image');
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      final event = {
-        'id_centre': widget.centreId,
+      final data = {
         'nom_event': _nameController.text,
-        'date_event': _selectedDate!.toIso8601String(),
+        'date_event': DateFormat('yyyy-MM-dd').format(_selectedDate!),
         'lieu_event': _lieuController.text,
+        'id_centre': widget.centreId,
         'tarif_standard': _hasTarifStandard ? int.parse(_tarifStandardController.text) : 0,
         'tarif_VIP': _hasTarifVIP ? int.parse(_tarifVIPController.text) : 0,
         'tarif_VVIP': _hasTarifVVIP ? int.parse(_tarifVVIPController.text) : null,
-        'image': _imagePath,
       };
 
-      final eventId = await _eventService.addEvent(event);
+      if (_imageFile != null) {
+        data['image_url'] = _imageFile;
+      }
 
-      if (eventId > 0) {
-        SnackBarHelper.showSuccess(context, 'Événement ajouté avec succès');
-        await Future.delayed(Duration(milliseconds: 1500));
-        if (mounted) {
-          Navigator.of(context).pop();
+      if (widget.eventToEdit != null) {
+        // Mode modification
+        final success = await _eventService.updateEvent(widget.eventToEdit!['id_event'], data);
+        if (success) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Événement modifié avec succès'), backgroundColor: Colors.green),
+          );
           widget.onSuccess();
+          Navigator.of(context).pop(); // Ferme le formulaire
+        } else {
+          throw Exception('Échec de la modification de l\'événement');
         }
       } else {
-        SnackBarHelper.showError(context, 'Échec de l\'ajout de l\'événement');
+        // Mode ajout
+        final eventId = await _eventService.addEvent(data);
+        if (eventId > 0) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Événement ajouté avec succès'), backgroundColor: Colors.green),
+          );
+          widget.onSuccess();
+          Navigator.of(context).pop(); // Ferme le formulaire
+        } else {
+          throw Exception('Échec de l\'ajout de l\'événement');
+        }
       }
     } catch (e) {
-      SnackBarHelper.showError(context, 'Erreur: ${e.toString()}');
-
+      print('Erreur: ${e.toString()}');
+      if (!mounted) return;
+      _showErrorSnackBar('Erreur: ${e.toString()}');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
+  }
+
+  Widget _buildImageWidget() {
+    if (_imageFile != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Image.file(
+          _imageFile!,
+          fit: BoxFit.cover,
+          width: double.infinity,
+        ),
+      );
+    } else if (_currentImageUrl != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Image.network(
+          '${ApiConfig.baseUrl2}storage/${_currentImageUrl}',
+          fit: BoxFit.cover,
+          width: double.infinity,
+          errorBuilder: (_, __, ___) => _buildPlaceholder(),
+        ),
+      );
+    } else {
+      return _buildPlaceholder();
+    }
+  }
+
+  Widget _buildPlaceholder() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey[600]),
+        SizedBox(height: 8),
+        Text(
+          'Ajouter une image',
+          style: TextStyle(color: Colors.grey[700]),
+        ),
+      ],
+    );
   }
 
   @override
@@ -649,7 +792,7 @@ class _AddEventFormState extends State<AddEventForm> {
     return ElevatedButton(
       onPressed: () {
         if (_isLoading) return;
-        _submitForm(c);
+        _submitForm();
       },
       style: ElevatedButton.styleFrom(
         backgroundColor: Colors.deepPurple,
@@ -677,5 +820,39 @@ class _AddEventFormState extends State<AddEventForm> {
         ],
       ),
     );
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  Future<void> _selectDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? DateTime.now(),
+      firstDate: DateTime.now(),
+      lastDate: DateTime(2101),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.light().copyWith(
+            colorScheme: ColorScheme.light(
+              primary: Colors.deepPurple,
+              onPrimary: Colors.white,
+              surface: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null && picked != _selectedDate) {
+      setState(() {
+        _selectedDate = picked;
+      });
+    }
   }
 }

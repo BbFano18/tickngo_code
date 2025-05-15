@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import '../../API/api_config.dart';
 import '../interfaces/reservation_screen.dart';
 import '../interfaces/splash_screen.dart';
@@ -75,10 +74,22 @@ class MovieDetailScreen extends StatelessWidget {
                   if (movie.genre != null) _buildDetailItem(Icons.theaters, 'Genre', movie.genre!),
                   if (movie.format != null) _buildDetailItem(Icons.movie_filter, 'Format', movie.format!),
                   if (movie.langue != null) _buildDetailItem(Icons.language, 'Langue', movie.langue!),
-                  if (movie.classification != null) _buildDetailItem(Icons.assignment_ind, 'Classification', movie.classification!),
-
+                  if (movie.classification != null) _buildDetailItem(Icons.warning, 'Classification', movie.classification!),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Tarifs',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 20,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _buildDetailItem(Icons.child_care, 'Tarif Enfant', '${movie.tarifEnfantFilm ?? 0} FCFA'),
+                  _buildDetailItem(Icons.person, 'Tarif Adulte', '${movie.tarifAdulteFilm ?? 0} FCFA'),
+                  _buildDetailItem(Icons.star, 'Tarif Première', '${movie.tarifPremiere ?? 0} FCFA'),
+                  const SizedBox(height: 20),
                   // Nouveau bouton ajouté ici
-                  const SizedBox(height: 30),
                   Center(
                     child: SizedBox(
                       width: double.infinity,
@@ -98,8 +109,8 @@ class MovieDetailScreen extends StatelessWidget {
                                 reservation: Reservation(
                                   eventTitle: movie.nomFilm,
                                   eventDate: "",
-                                  eventTime: movie.dureeFilm,
-                                  eventLocation: "Canal Olympia Marina",
+                                  eventTime: "",
+                                  eventLocation: "",
                                   ticketPrices: {
                                     "Adulte": 2000,
                                     "Enfant": 1000,
@@ -108,6 +119,10 @@ class MovieDetailScreen extends StatelessWidget {
                                     "Standard": 0,
                                     "VIP": 500,
                                   },
+                                  type: ReservationType.film,
+                                  duration: movie.dureeFilm,
+                                  classification: movie.classification,
+                                  centreName: "Canal Olympia",
                                 ),
                               ),
                             ),

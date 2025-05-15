@@ -6,6 +6,7 @@ import 'package:printing/printing.dart';
 import 'package:qr_flutter/qr_flutter.dart' as qr_flutter;
 import 'dart:math' as math;
 import '../../Services/kkiapay_service.dart';
+import 'package:share_plus/share_plus.dart';
 
 class TicketConfirmationScreen extends StatelessWidget {
   final List<Ticket> tickets;
@@ -37,7 +38,9 @@ class TicketConfirmationScreen extends StatelessWidget {
                         _buildTransactionDetails(),
                         const SizedBox(height: 30),
                         _buildTicketList(),
-                        const SizedBox(height: 40),
+                        const SizedBox(height: 30),
+                        _buildShareButton(),
+                        const SizedBox(height: 20),
                         _buildDownloadButton(context),
                         const SizedBox(height: 20),
                         _buildBackButton(context),
@@ -314,6 +317,122 @@ class TicketConfirmationScreen extends StatelessWidget {
         "${date.year} "
         "${date.hour.toString().padLeft(2, '0')}:"
         "${date.minute.toString().padLeft(2, '0')}";
+  }
+
+  Widget _buildShareButton() {
+    return ElevatedButton.icon(
+      icon: const Icon(Icons.share, color: Colors.white),
+      label: Text(
+        "Partager les tickets",
+        style: GoogleFonts.poppins(color: Colors.white),
+      ),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.deepPurple,
+        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 15),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      onPressed: () async {
+        // Générer le PDF
+        final pdf = await _generateTicketsPDF();
+        final bytes = await pdf.save();
+        
+        // Partager le PDF
+        await Share.shareXFiles(
+          [
+            XFile.fromData(
+              bytes,
+              name: 'tickets.pdf',
+              mimeType: 'application/pdf',
+            ),
+          ],
+          subject: 'Mes tickets TicknGo',
+          text: 'Voici mes tickets pour l\'événement !',
+        );
+      },
+    );
+  }
+
+  // Méthode pour générer le PDF des tickets
+  Future<pw.Document> _generateTicketsPDF() async {
+    final pdf = pw.Document();
+
+    for (var ticket in tickets) {
+      final qrCode = await qr_flutter.QrPainter(
+        data: ticket.id,
+        version: qr_flutter.QrVersions.auto,
+        gapless: true,
+      ).toImageData(200);
+
+      pdf.addPage(
+        pw.Page(
+          build: (pw.Context context) => pw.Container(
+            padding: const pw.EdgeInsets.all(20),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.grey),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Header(
+                  level: 0,
+                  child: pw.Text(
+                    "TicknGo - Ticket Électronique",
+                    style: pw.TextStyle(
+                      fontSize: 24,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 20),
+                pw.Text(
+                  "Ticket pour : ${ticket.eventTitle}",
+                  style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+                ),
+                pw.SizedBox(height: 10),
+                pw.Text("Type : ${ticket.ticketType}"),
+                pw.Text("Catégorie : ${ticket.category}"),
+                pw.Text("Prix : ${ticket.price.toStringAsFixed(2)} CFA"),
+                pw.Text("ID Ticket : ${ticket.id}"),
+                pw.SizedBox(height: 20),
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          "Date d'achat :",
+                          style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+                        ),
+                        pw.Text(_formatDate(DateTime.now())),
+                      ],
+                    ),
+                    if (qrCode != null)
+                      pw.Image(
+                        pw.MemoryImage(qrCode.buffer.asUint8List()),
+                        width: 100,
+                        height: 100,
+                      ),
+                  ],
+                ),
+                pw.Divider(),
+                pw.SizedBox(height: 10),
+                pw.Text(
+                  "Ce ticket est valide uniquement avec une pièce d'identité.",
+                  style: pw.TextStyle(
+                    fontSize: 10,
+                    color: PdfColors.grey700,
+                    fontStyle: pw.FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return pdf;
   }
 }
 

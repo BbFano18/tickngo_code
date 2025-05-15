@@ -448,8 +448,8 @@ class GameDetailsScreen extends StatelessWidget {
                               builder: (context) => ReservationScreen(
                                 reservation: Reservation(
                                   eventTitle: game.title,
-                                  eventDate: "Aujourd'hui",  // You might want to add a proper date field to Game class
-                                  eventTime: game.duration,
+                                  eventDate: "Aujourd'hui",
+                                  eventTime: "",
                                   eventLocation: game.location,
                                   ticketPrices: {
                                     "Adulte": 2000,
@@ -459,6 +459,10 @@ class GameDetailsScreen extends StatelessWidget {
                                     "Standard": 0,
                                     "VIP": 500,
                                   },
+                                  type: ReservationType.jeu,
+                                  duration: game.duration,
+                                  minimumAge: int.tryParse(game.ageMin),
+                                  centreName: "Centre de jeux",
                                 ),
                               ),
                             ),

@@ -71,117 +71,138 @@ class EventService {
         Uri.parse('${ApiConfig.baseUrl}centre/$centreId/evenement'),
         headers: {'Accept': 'application/json'},
       );
-
+      
       if (response.statusCode == 201) {
-        final List<dynamic> data = json.decode(response.body)['data'];
-        return List<Map<String, dynamic>>.from(data);
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return (data['data'] as List).cast<Map<String, dynamic>>();
       } else {
-        throw Exception('Échec du chargement des événements: ${response.statusCode}');
+        throw Exception('Erreur ${response.statusCode}');
       }
     } catch (e) {
-      print('Erreur lors de la récupération des événements: $e');
-      throw e;
+      print('Erreur fetchEvents: $e');
+      return [];
     }
   }
 
-  // Ajouter un événement
-  Future<int> addEvent(Map<String, dynamic> eventData) async {
+  Future<int> addEvent(Map<String, dynamic> data) async {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}evenement');
       final request = http.MultipartRequest('POST', uri);
 
-      request.fields['id_centre'] = eventData['id_centre'].toString();
-      request.fields['nom_event'] = eventData['nom_event'];
-      request.fields['date_event'] = eventData['date_event'];
-      request.fields['lieu_event'] = eventData['lieu_event'];
-      request.fields['tarif_standard'] = eventData['tarif_standard'].toString();
-      request.fields['tarif_VIP'] = eventData['tarif_VIP'].toString();
-
-      if (eventData['tarif_VVIP'] != null) {
-        request.fields['tarif_VVIP'] = eventData['tarif_VVIP'].toString();
+      // Ajout des champs texte
+      request.fields['nom_event'] = data['nom_event'];
+      request.fields['date_event'] = data['date_event'];
+      request.fields['lieu_event'] = data['lieu_event'];
+      request.fields['id_centre'] = data['id_centre'].toString();
+      request.fields['tarif_standard'] = data['tarif_standard'].toString();
+      request.fields['tarif_VIP'] = data['tarif_VIP'].toString();
+      if (data['tarif_VVIP'] != null) {
+        request.fields['tarif_VVIP'] = data['tarif_VVIP'].toString();
       }
 
-      final file = File(eventData['image']);
-      final fileExtension = file.path.split('.').last.toLowerCase();
-
-      request.files.add(
-        await http.MultipartFile.fromPath(
+      // Gestion de l'image
+      if (data['image_url'] != null && data['image_url'] is File) {
+        final file = data['image_url'] as File;
+        final stream = http.ByteStream(file.openRead());
+        final length = await file.length();
+        
+        final multipartFile = http.MultipartFile(
           'image',
-          file.path,
-          contentType: MediaType('image', fileExtension),
-        ),
-      );
+          stream,
+          length,
+          filename: file.path.split('/').last,
+        );
+        request.files.add(multipartFile);
+      }
 
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
-      print('Réponse brute: ${response.body}');
-
       if (response.statusCode == 201) {
-        final responseData = json.decode(response.body);
-        return responseData['id_event'] ?? 0;
+        final responseData = jsonDecode(response.body);
+        return responseData['data']['id_event'] ?? -1;
       } else {
         throw Exception('Erreur ${response.statusCode}: ${response.body}');
       }
     } catch (e) {
-      print('Erreur lors de l\'ajout de l\'événement: $e');
+      print('Erreur addEvent: $e');
       throw e;
     }
   }
 
-  // Supprimer un événement
-  Future<bool> deleteEvent(int eventId) async {
-    try {
-      final response = await http.delete(
-        Uri.parse('${ApiConfig.baseUrl}evenement/$eventId'),
-        headers: {'Accept': 'application/json'},
-      );
-
-      print('Delete status: ${response.statusCode}, body: ${response.body}');
-      return response.statusCode == 200;
-    } catch (e) {
-      print('Erreur lors de la suppression de l\'événement: $e');
-      throw e;
-    }
-  }
-
-  // Mettre à jour un événement
-  Future<bool> updateEvent(int eventId, Map<String, dynamic> eventData, {String? newImagePath}) async {
+  Future<bool> updateEvent(int eventId, Map<String, dynamic> data) async {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}evenement/$eventId');
-      final request = http.MultipartRequest('PUT', uri);
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['_method'] = 'PUT';
 
-      request.fields['nom_event'] = eventData['nom_event'];
-      request.fields['date_event'] = eventData['date_event'];
-      request.fields['lieu_event'] = eventData['lieu_event'];
-      request.fields['tarif_standard'] = eventData['tarif_standard'].toString();
-      request.fields['tarif_VIP'] = eventData['tarif_VIP'].toString();
-
-      if (eventData['tarif_VVIP'] != null) {
-        request.fields['tarif_VVIP'] = eventData['tarif_VVIP'].toString();
+      // ✅ Ajout du champ id_centre
+      if (data['id_centre'] != null) {
+        request.fields['id_centre'] = data['id_centre'].toString();
       }
 
-      if (newImagePath != null) {
-        final file = File(newImagePath);
-        final fileExtension = file.path.split('.').last.toLowerCase();
+      if (data['nom_event'] != null) request.fields['nom_event'] = data['nom_event'].toString();
+      if (data['date_event'] != null) request.fields['date_event'] = data['date_event'].toString();
+      if (data['lieu_event'] != null) request.fields['lieu_event'] = data['lieu_event'].toString();
+      if (data['tarif_standard'] != null) request.fields['tarif_standard'] = data['tarif_standard'].toString();
+      if (data['tarif_VIP'] != null) request.fields['tarif_VIP'] = data['tarif_VIP'].toString();
+      if (data['tarif_VVIP'] != null) request.fields['tarif_VVIP'] = data['tarif_VVIP'].toString();
 
-        request.files.add(
-          await http.MultipartFile.fromPath(
-            'image',
-            file.path,
-            contentType: MediaType('image', fileExtension),
-          ),
+      if (data['image_url'] != null && data['image_url'] is File) {
+        final file = data['image_url'] as File;
+        final stream = http.ByteStream(file.openRead());
+        final length = await file.length();
+
+        final multipartFile = http.MultipartFile(
+          'image',
+          stream,
+          length,
+          filename: file.path.split('/').last,
         );
+        request.files.add(multipartFile);
       }
 
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
-      print('Update status: ${response.statusCode}, body: ${response.body}');
 
+      if (response.statusCode == 200) {
+        final decodedResponse = jsonDecode(response.body);
+        return decodedResponse['success'] == true || decodedResponse['status'] == 'success';
+      }
+
+      print('Erreur lors de la mise à jour de l\'événement: ${response.statusCode} - ${response.body}');
+      return false;
+    } catch (e) {
+      print('Erreur updateEvent: $e');
+      throw Exception('Impossible de mettre à jour l\'événement: $e');
+    }
+  }
+
+
+  Future<bool> deleteEvent(int eventId) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}evenement/$eventId'),
+      );
       return response.statusCode == 200;
     } catch (e) {
-      print('Erreur lors de la mise à jour de l\'événement: $e');
-      throw e;
+      print('Erreur deleteEvent: $e');
+      return false;
+    }
+  }
+
+  /// Récupérer les détails d'un événement
+  Future<Map<String, dynamic>?> fetchEventDetails(int eventId) async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}evenements/$eventId'));
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        return decoded['data'] as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      print('Erreur lors de la récupération des détails de l\'événement: $e');
+      return null;
     }
   }
 }
