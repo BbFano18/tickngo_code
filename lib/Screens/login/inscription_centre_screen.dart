@@ -1,14 +1,11 @@
 import 'dart:io';
-
-import 'package:TicknGo/Screens/interfaces/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import '../../Services/inscription_centre_service.dart';
 import '../../themes/app_theme.dart';
-import '../interfaces/acceuil_screen.dart';
+import '../interfaces/splash_screen.dart';
 import 'connexion_centre_screen.dart';
 
 

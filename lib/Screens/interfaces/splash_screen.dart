@@ -4,7 +4,6 @@ import 'package:TicknGo/Screens/interfaces/welcome_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import 'acceuil_screen.dart';
 
 
@@ -200,7 +199,7 @@ class _SplashScreenState extends State<SplashScreen>
     // Contrôleur pour l'animation d'échelle
     _scaleController = AnimationController(
       vsync: this,
-      duration: Duration(seconds: 2),
+      duration: Duration(seconds: 5),
     )..repeat(reverse: true);
 
     _scaleAnimation = CurvedAnimation(
@@ -224,7 +223,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _navigateToNextScreen() async {
-    await Future.delayed(Duration(seconds: 3));
+    await Future.delayed(Duration(seconds: 5));
 
     final prefs = await SharedPreferences.getInstance();
     final isFirstTime = prefs.getBool('isFirstTime') ?? true;

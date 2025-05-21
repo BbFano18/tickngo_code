@@ -1,11 +1,9 @@
+
 import 'package:TicknGo/Screens/interfaces/splash_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import '../../widgets/custom_button.dart';
 import '../login/inscription_centre_screen.dart';
-import 'acceuil_screen.dart';
 import '../login/inscription_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {

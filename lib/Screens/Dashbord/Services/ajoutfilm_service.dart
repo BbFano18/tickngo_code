@@ -59,7 +59,102 @@ class MovieService {
         throw Exception('Erreur ${response.statusCode} - ${response.body}');
       }
       final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-      return (decoded['data'] as List).cast<Map<String, dynamic>>();
+      final List<Map<String, dynamic>> movies = (decoded['data'] as List).cast<Map<String, dynamic>>();
+      
+      // Récupérer toutes les classifications en une seule fois
+      final classificationsResponse = await http.get(Uri.parse('${ApiConfig.baseUrl}classification'));
+      Map<int, String> classificationsMap = {};
+      if (classificationsResponse.statusCode == 200) {
+        final classificationsData = jsonDecode(classificationsResponse.body);
+        if (classificationsData['data'] != null) {
+          final List<dynamic> classifications = classificationsData['data'];
+          for (var classification in classifications) {
+            classificationsMap[classification['id_classif']] = classification['lib_classif'];
+          }
+        }
+      }
+      
+      // Pour chaque film, récupérer les informations complémentaires
+      for (var movie in movies) {
+        try {
+          // Récupérer le format
+          if (movie['id_format'] != null) {
+            final formatResponse = await http.get(
+              Uri.parse('${ApiConfig.baseUrl}format/${movie['id_format']}')
+            );
+            if (formatResponse.statusCode == 200) {
+              final formatData = jsonDecode(formatResponse.body);
+              if (formatData['data'] != null) {
+                movie['lib_format'] = formatData['data']['lib_format'];
+              }
+            }
+          }
+
+          // Récupérer le genre
+          if (movie['id_genre'] != null) {
+            final genreResponse = await http.get(
+              Uri.parse('${ApiConfig.baseUrl}genre/${movie['id_genre']}')
+            );
+            if (genreResponse.statusCode == 200) {
+              final genreData = jsonDecode(genreResponse.body);
+              if (genreData['data'] != null) {
+                movie['lib_genre'] = genreData['data']['lib_genre'];
+              }
+            }
+          }
+
+          // Récupérer la langue
+          if (movie['id_langue'] != null) {
+            final langueResponse = await http.get(
+              Uri.parse('${ApiConfig.baseUrl}langue/${movie['id_langue']}')
+            );
+            if (langueResponse.statusCode == 200) {
+              final langueData = jsonDecode(langueResponse.body);
+              if (langueData['data'] != null) {
+                movie['lib_langue'] = langueData['data']['lib_langue'];
+              }
+            }
+          }
+
+          // Récupérer la classification depuis la map
+          if (movie['id_classif'] != null) {
+            movie['lib_classif'] = classificationsMap[movie['id_classif']] ?? '';
+            print('Classification pour ${movie['nom_film']}: ${movie['lib_classif']}');
+          }
+
+          // Récupérer la catégorie
+          if (movie['id_cat_fil'] != null) {
+            final catResponse = await http.get(
+              Uri.parse('${ApiConfig.baseUrl}categoriefilm/${movie['id_cat_fil']}')
+            );
+            if (catResponse.statusCode == 200) {
+              final catData = jsonDecode(catResponse.body);
+              if (catData['data'] != null) {
+                movie['lib_cat_fil'] = catData['data']['lib_cat_fil'];
+              }
+            }
+          }
+
+          // Formater les tarifs
+          movie['tarif_enf_film'] = int.tryParse(movie['tarif_enf_film']?.toString() ?? '0') ?? 0;
+          movie['tarif_adu_film'] = int.tryParse(movie['tarif_adu_film']?.toString() ?? '0') ?? 0;
+          movie['tarif_premiere'] = int.tryParse(movie['tarif_premiere']?.toString() ?? '0') ?? 0;
+          movie['prix'] = int.tryParse(movie['prix']?.toString() ?? '0') ?? 0;
+
+          print('Film traité: ${movie['nom_film']}');
+          print('Format: ${movie['lib_format']}');
+          print('Genre: ${movie['lib_genre']}');
+          print('Langue: ${movie['lib_langue']}');
+          print('Classification: ${movie['lib_classif']}');
+          print('Catégorie: ${movie['lib_cat_fil']}');
+          print('Tarifs: ${movie['tarif_enf_film']}, ${movie['tarif_adu_film']}, ${movie['tarif_premiere']}, ${movie['prix']}');
+
+        } catch (e) {
+          print('Erreur lors du traitement du film ${movie['nom_film']}: $e');
+        }
+      }
+
+      return movies;
     } catch (e) {
       print('Erreur fetchMovies: ${e.toString()}');
       return [];
@@ -113,37 +208,6 @@ class MovieService {
     return Future.value(true);
   }
 
-  Future<String?> uploadImage(File imageFile) async {
-    try {
-      final uri = Uri.parse('${ApiConfig.baseUrl}upload');
-      final request = http.MultipartRequest('POST', uri);
-      
-      final stream = http.ByteStream(imageFile.openRead());
-      final length = await imageFile.length();
-      
-      final multipartFile = http.MultipartFile(
-        'image',
-        stream,
-        length,
-        filename: imageFile.path.split('/').last,
-      );
-      
-      request.files.add(multipartFile);
-      
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-      
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        return responseData['url'];
-      }
-      return null;
-    } catch (e) {
-      print('Erreur lors du téléchargement de l\'image: $e');
-      return null;
-    }
-  }
-
   Future<int> addMovie(Map<String, dynamic> data) async {
     try {
       print('Début de l\'ajout du film avec les données : ${data.toString()}');
@@ -169,18 +233,19 @@ class MovieService {
       request.fields['tarif_premiere'] = (data['tarif_premiere'] ?? 0).toString();
       request.fields['prix'] = (data['prix'] ?? 0).toString();
 
-      print('Champs du formulaire ajoutés à la requête');
-
-      // Gestion améliorée de l'image
+      // Ajout de l'image
       if (data['image_url'] != null && data['image_url'] is File) {
-        print('Début du téléchargement de l\'image');
-        final imageUrl = await uploadImage(data['image_url']);
-        if (imageUrl != null) {
-          request.fields['image_url'] = imageUrl;
-          print('Image téléchargée avec succès : $imageUrl');
-        } else {
-          print('Échec du téléchargement de l\'image');
-        }
+        final file = data['image_url'] as File;
+        final stream = http.ByteStream(file.openRead());
+        final length = await file.length();
+        
+        final multipartFile = http.MultipartFile(
+          'image',
+          stream,
+          length,
+          filename: file.path.split('/').last,
+        );
+        request.files.add(multipartFile);
       }
 
       print('Envoi de la requête à l\'API...');
@@ -191,13 +256,15 @@ class MovieService {
 
       if (response.statusCode == 201) {
         final responseData = jsonDecode(response.body);
-        final movieId = responseData['data']['id_film'] ?? -1;
-        print('Film ajouté avec succès. ID: $movieId');
-        return movieId;
-      } else {
-        print('Erreur lors de l\'ajout du film. Status: ${response.statusCode}');
-        throw Exception('Erreur ${response.statusCode}: ${response.body}');
+        if (responseData['data'] != null && responseData['data']['film'] != null) {
+          final movieId = responseData['data']['film']['id_film'];
+          print('Film ajouté avec succès. ID: $movieId');
+          return movieId;
+        }
       }
+      
+      print('Erreur lors de l\'ajout du film. Status: ${response.statusCode}');
+      throw Exception('Erreur ${response.statusCode}: ${response.body}');
     } catch (e) {
       print('Exception dans addMovie: $e');
       throw e;
@@ -206,21 +273,28 @@ class MovieService {
 
   Future<bool> deleteMovie(int movieId) async {
     try {
+      print('Tentative de suppression du film avec l\'ID: $movieId');
       final response = await http.delete(
         Uri.parse('${ApiConfig.baseUrl}films/$movieId'),
       );
 
+      print('Réponse reçue - Status: ${response.statusCode}');
+      print('Corps de la réponse: ${response.body}');
+
       if (response.statusCode == 200) {
         final decodedResponse = jsonDecode(response.body);
-        if (decodedResponse['success'] == true || decodedResponse['status'] == 'success') {
+        if (decodedResponse['success'] == true || 
+            decodedResponse['status'] == 'success' ||
+            decodedResponse['message']?.toString().toLowerCase().contains('succ') == true) {
+          print('Film supprimé avec succès');
           return true;
-        } else {
-          throw Exception(decodedResponse['message'] ?? 'Échec de la suppression');
         }
+        throw Exception(decodedResponse['message'] ?? 'La suppression a échoué');
       }
-      throw Exception('Erreur lors de la suppression du film');
+
+      throw Exception('Erreur ${response.statusCode}: ${response.body}');
     } catch (e) {
-      print('Erreur deleteMovie: $e');
+      print('Exception dans deleteMovie: $e');
       throw Exception('Impossible de supprimer le film: $e');
     }
   }
@@ -241,8 +315,8 @@ class MovieService {
 
   Future<List<Map<String, dynamic>>?> fetchMovieProgrammes(dynamic id_film) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}film/$id_film/programme'));
-      if (response.statusCode == 201) {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}programme/$id_film/films'));
+      if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
         return (decoded['data'] as List?)?.cast<Map<String, dynamic>>();
       }
@@ -257,11 +331,11 @@ class MovieService {
       dynamic id_film, List<Map<String, dynamic>> programmes) async {
     try {
       final response = await http.put(
-        Uri.parse('${ApiConfig.baseUrl}films/$id_film/programme'),
+        Uri.parse('${ApiConfig.baseUrl}programme/$id_film'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'programmes': programmes}),
       );
-      return response.statusCode == 200;
+      return response.statusCode == 201;
     } catch (e) {
       print('Erreur lors de la mise à jour des programmes: $e');
       return false;
@@ -303,13 +377,20 @@ class MovieService {
       addFieldIfChanged('tarif_adu_film', data['tarif_adu_film']);
       addFieldIfChanged('tarif_premiere', data['tarif_premiere']);
 
-      // Gestion améliorée de l'image pour la mise à jour
+      // Gestion de l'image
       if (data['image_url'] != null && data['image_url'] is File) {
-        final imageUrl = await uploadImage(data['image_url']);
-        if (imageUrl != null) {
-          request.fields['image_url'] = imageUrl;
-          hasChanges = true;
-        }
+        final file = data['image_url'] as File;
+        final stream = http.ByteStream(file.openRead());
+        final length = await file.length();
+        
+        final multipartFile = http.MultipartFile(
+          'image',
+          stream,
+          length,
+          filename: file.path.split('/').last,
+        );
+        request.files.add(multipartFile);
+        hasChanges = true;
       }
 
       if (!hasChanges) {
@@ -328,6 +409,119 @@ class MovieService {
     } catch (e) {
       print('Erreur updateMovie: $e');
       throw e;
+    }
+  }
+
+  /// Ajouter une programmation pour un film
+  Future<bool> addSchedule(Map<String, dynamic> programData) async {
+    try {
+      if (programData['id_film'] == null) {
+        throw Exception('ID du film requis');
+      }
+
+      final uri = Uri.parse('${ApiConfig.baseUrl}programme');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'id_jour': programData['id_jour'],
+          'id_film': programData['id_film'],
+          'heure': programData['heure'],
+          'id_event': programData['id_event'] ?? null,
+          'id_jeux': programData['id_jeux'] ?? null,
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        return decoded['success'] == true || decoded['status'] == 'success';
+      }
+
+      print('Erreur API ${response.statusCode}: ${response.body}');
+      return false;
+    } catch (e) {
+      print('Erreur addSchedule: $e');
+      return false;
+    }
+  }
+
+  /// Récupérer les programmes d'un film spécifique
+  Future<List<Map<String, dynamic>>> getProgrammesByFilm(int idFilm) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}programme/$idFilm/films')
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        return (decoded['data'] as List).cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      print('Erreur getProgrammesByFilm: $e');
+      return [];
+    }
+  }
+
+  /// Supprimer un programme
+  Future<bool> deleteProgramme(int idProg) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}programme/$idProg')
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Erreur deleteProgramme: $e');
+      return false;
+    }
+  }
+
+  /// Mettre à jour les programmes d'un film
+  Future<bool> updateFilmSchedules(int filmId, List<Map<String, dynamic>> schedules) async {
+    try {
+      if (filmId <= 0) {
+        throw Exception('ID du film invalide');
+      }
+
+      final uri = Uri.parse('${ApiConfig.baseUrl}programme/$filmId');
+      final response = await http.put(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'programme': schedules}),
+      );
+
+      if (response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        return decoded['success'] == true || decoded['status'] == 'success';
+      }
+
+      print('Erreur API ${response.statusCode}: ${response.body}');
+      return false;
+    } catch (e) {
+      print('Erreur updateFilmSchedules: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> fetchClassificationById(int id) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}classifications/$id'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        return data;
+      }
+      return null;
+    } catch (e) {
+      print('Erreur lors de la récupération de la classification: $e');
+      return null;
     }
   }
 }

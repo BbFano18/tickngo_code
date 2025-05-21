@@ -15,15 +15,13 @@ class _StatsScreenState extends State<StatsScreen> {
   bool isLoading = true;
   Map<String, dynamic> statsData = {
     'ventesParType': {},
-    'topVendus': {
-      'evenement': [],
-      'jeu': [],
-      'cinema': []
-    },
+    'topVendus': {'evenement': [], 'jeu': [], 'cinema': []},
     'totalClients': 0,
     'revenusParMois': [],
     'tauxReservation': 0.0
   };
+
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -31,23 +29,15 @@ class _StatsScreenState extends State<StatsScreen> {
     _fetchStats();
   }
 
-  void _showError(String message) {
-    if (!mounted) return;
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger != null) {
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-          margin: EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
-    }
+  void _showError(String message) {
+    // Désactivation de l'affichage des erreurs
+    return;
   }
 
   Future<void> _fetchStats() async {
@@ -73,8 +63,19 @@ class _StatsScreenState extends State<StatsScreen> {
       }
     } catch (e) {
       if (!mounted) return;
+
       setState(() => isLoading = false);
-      _showError('Erreur lors du chargement des statistiques: $e');
+      _showError('Erreur lors du chargement: ${e.toString().replaceAll(RegExp(r'^Exception: '), '')}');
+    }
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
     }
   }
 
@@ -87,7 +88,7 @@ class _StatsScreenState extends State<StatsScreen> {
         automaticallyImplyLeading: false,
         centerTitle: true,
         title: Text(
-          'Tableau de Bord',
+          'Statistiques',
           style: GoogleFonts.montserrat(
             fontSize: 20.0,
             fontWeight: FontWeight.bold,
@@ -106,6 +107,7 @@ class _StatsScreenState extends State<StatsScreen> {
           : RefreshIndicator(
         onRefresh: _fetchStats,
         child: SingleChildScrollView(
+          controller: _scrollController,
           physics: AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.all(16.0),
           child: Column(
@@ -118,6 +120,7 @@ class _StatsScreenState extends State<StatsScreen> {
               _buildTopSellingSection(),
               SizedBox(height: 20),
               _buildPerformanceMetrics(),
+              SizedBox(height: 70),
             ],
           ),
         ),
@@ -154,9 +157,12 @@ class _StatsScreenState extends State<StatsScreen> {
                 tooltipBehavior: TooltipBehavior(enable: true),
                 series: <CartesianSeries>[
                   ColumnSeries<Map<String, dynamic>, String>(
-                    dataSource: List<Map<String, dynamic>>.from(statsData['revenusParMois']),
-                    xValueMapper: (Map<String, dynamic> data, _) => data['mois'] as String,
-                    yValueMapper: (Map<String, dynamic> data, _) => data['montant'] as num,
+                    dataSource: List<Map<String, dynamic>>.from(
+                        statsData['revenusParMois']),
+                    xValueMapper: (Map<String, dynamic> data, _) =>
+                    data['mois'] as String,
+                    yValueMapper: (Map<String, dynamic> data, _) =>
+                    data['montant'] as num,
                     name: 'Revenus',
                     color: Color(0xFF7F56D9),
                   )
@@ -170,8 +176,10 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Widget _buildTicketTypeChart() {
-    final List<PieData> pieData = statsData['ventesParType'].entries
-        .map<PieData>((entry) => PieData(entry.key, (entry.value as num).toDouble()))
+    final List<PieData> pieData = statsData['ventesParType']
+        .entries
+        .map<PieData>((entry) =>
+        PieData(entry.key, (entry.value as num).toDouble()))
         .toList();
 
     return Card(
@@ -229,16 +237,20 @@ class _StatsScreenState extends State<StatsScreen> {
               ),
             ),
             SizedBox(height: 20),
-            _buildTopSellingList('Événements', statsData['topVendus']['evenement'], Icons.event),
-            _buildTopSellingList('Jeux', statsData['topVendus']['jeu'], Icons.sports_esports),
-            _buildTopSellingList('Cinéma', statsData['topVendus']['cinema'], Icons.movie),
+            _buildTopSellingList(
+                'Événements', statsData['topVendus']['evenement'], Icons.event),
+            _buildTopSellingList(
+                'Jeux', statsData['topVendus']['jeu'], Icons.sports_esports),
+            _buildTopSellingList(
+                'Cinéma', statsData['topVendus']['cinema'], Icons.movie),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTopSellingList(String title, List<dynamic> items, IconData icon) {
+  Widget _buildTopSellingList(
+      String title, List<dynamic> items, IconData icon) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -255,12 +267,14 @@ class _StatsScreenState extends State<StatsScreen> {
             ),
           ],
         ),
-        ...items.map((item) => ListTile(
+        ...items
+            .map((item) => ListTile(
           leading: Icon(Icons.star, color: Colors.amber),
           title: Text(item['nom']),
           subtitle: Text('${item['ventes']} ventes'),
           trailing: Text('${item['revenu']} FCFA'),
-        )).toList(),
+        ))
+            .toList(),
         Divider(),
       ],
     );
@@ -302,7 +316,8 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  Widget _buildMetricTile(String title, String value, IconData icon, Color color) {
+  Widget _buildMetricTile(
+      String title, String value, IconData icon, Color color) {
     return ListTile(
       leading: Container(
         padding: EdgeInsets.all(8),

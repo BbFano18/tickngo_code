@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 class AppTheme {
   // Définition des couleurs principales
-  static const Color primaryColor = Color(0xFFD88F73);
+  static const Color primaryColor = Color(0xFF7F56D9); // Violet
+  static const Color primaryLightColor = Color(0xFFF4EBFF); // Violet clair
   static const Color textColor = Colors.black;
 
   // Définition des styles de texte
@@ -28,9 +29,15 @@ class AppTheme {
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
         backgroundColor: primaryColor,
-        padding: EdgeInsets.symmetric(horizontal: 30, vertical: 12),
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
+    ),
+    appBarTheme: const AppBarTheme(
+      backgroundColor: primaryColor,
+      foregroundColor: Colors.white,
+      elevation: 0,
     ),
   );
 }

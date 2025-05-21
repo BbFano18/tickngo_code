@@ -74,7 +74,7 @@ class MovieDetailScreen extends StatelessWidget {
                   if (movie.genre != null) _buildDetailItem(Icons.theaters, 'Genre', movie.genre!),
                   if (movie.format != null) _buildDetailItem(Icons.movie_filter, 'Format', movie.format!),
                   if (movie.langue != null) _buildDetailItem(Icons.language, 'Langue', movie.langue!),
-                  if (movie.classification != null) _buildDetailItem(Icons.warning, 'Classification', movie.classification!),
+                  if (movie.classification != null) _buildDetailItem(Icons.warning, 'Tranche d\'âge', movie.classification!),
                   const SizedBox(height: 20),
                   Text(
                     'Tarifs',
@@ -112,12 +112,8 @@ class MovieDetailScreen extends StatelessWidget {
                                   eventTime: "",
                                   eventLocation: "",
                                   ticketPrices: {
-                                    "Adulte": 2000,
-                                    "Enfant": 1000,
                                   },
                                   categoryPrices: {
-                                    "Standard": 0,
-                                    "VIP": 500,
                                   },
                                   type: ReservationType.film,
                                   duration: movie.dureeFilm,

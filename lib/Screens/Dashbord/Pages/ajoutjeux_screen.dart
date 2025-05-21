@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../API/api_config.dart';
 import '../Services/ajoutjeux_service.dart';
+import 'dart:async';
 
 class GameDashboard extends StatefulWidget {
   const GameDashboard({Key? key}) : super(key: key);
@@ -17,11 +18,24 @@ class _GameDashboardState extends State<GameDashboard> {
   List<Map<String, dynamic>> _games = [];
   bool _isLoading = false;
   int? _userId;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadGames();
+    // Ajouter un timer pour l'actualisation automatique
+    _refreshTimer = Timer.periodic(Duration(seconds: 30), (timer) {
+      if (mounted) {
+        _loadGames();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadGames() async {
@@ -29,21 +43,22 @@ class _GameDashboardState extends State<GameDashboard> {
     try {
       final userId = await _getUserId();
       final List<Map<String, dynamic>> games = await _gameService.fetchGames(userId);
-      setState(() {
-        _games = games;
-      });
+      if (mounted) {
+        setState(() {
+          _games = games;
+        });
+      }
     } catch (e) {
       print('Erreur lors du chargement des jeux: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur lors du chargement des jeux'),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text('Erreur lors du chargement des jeux')),
         );
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -90,6 +105,7 @@ class _GameDashboardState extends State<GameDashboard> {
                       centreId: _userId!,
                       onSuccess: (int gameId) async {
                         await _loadGames();
+                        Navigator.pop(context);
                       },
                     ),
                   ),
@@ -154,7 +170,7 @@ class _GameDashboardState extends State<GameDashboard> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(message), backgroundColor: color),
       );
-      if (success) _loadGames();
+      if (success) await _loadGames();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -219,6 +235,7 @@ class _GameDashboardState extends State<GameDashboard> {
                       gameToEdit: game,
                       onSuccess: (int gameId) async {
                         await _loadGames();
+                        Navigator.pop(context);
                       },
                     ),
                   ),
@@ -321,34 +338,215 @@ class _GameDashboardState extends State<GameDashboard> {
   Widget _buildGameCard(Map<String, dynamic> game) {
     return Card(
       elevation: 3,
-      margin: EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      margin: EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        contentPadding: EdgeInsets.all(12),
-        leading: _buildGameImage(game['image_url']),
-        title: Text(game['nom_jeux'] ?? 'Sans titre', style: TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: 4),
-            Text('Lieu: ${game['lieu_jeux'] ?? 'N/A'}'),
-            Text('Durée: ${game['duree_jeux'] ?? 'Non spécifiée'}'),
-            Text('Tarif: ${game['tarif'] ?? 'N/A'} FCFA'),
-            if (game['age_mini'] != null) Text('Âge minimum: ${game['age_mini']}'),
-          ],
+      child: InkWell(
+        onTap: () => _showGameDetails(game),
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: Row(
+            children: [
+              _buildGameImage(game['image_url']),
+              SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      game['nom_jeux'] ?? 'Sans titre',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Lieu: ${game['lieu_jeux'] ?? 'Non spécifié'}',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    Text(
+                      'Date minimum: ${game['date_min'] ?? 'Non spécifiée'}',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.schedule, color: Colors.purple),
+                    onPressed: () => _viewSchedule(game['id_jeux'].toInt()),
+                    tooltip: 'Voir programmation',
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.edit, color: Colors.blue),
+                    onPressed: () => _editGame(game),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _deleteGame(game['id_jeux']),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(
-              icon: Icon(Icons.schedule, color: Colors.purple),
-              onPressed: () => _viewSchedule(game['id_jeux'].toInt()),
-              tooltip: 'Voir programmation',
+      ),
+    );
+  }
+
+  void _showGameDetails(Map<String, dynamic> game) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.6,
+          maxChildSize: 0.95,
+          builder: (_, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // En-tête avec bouton de fermeture
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Détails du jeu',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple,
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Contenu
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      padding: EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Image du jeu
+                          if (game['image_url'] != null)
+                            Container(
+                              width: double.infinity,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                image: DecorationImage(
+                                  image: NetworkImage(game['image_url']),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          SizedBox(height: 24),
+                          
+                          // Informations générales
+                          _buildDetailSection('Informations générales', [
+                            _buildDetailRow('Nom', game['nom_jeux']),
+                            _buildDetailRow('Lieu', game['lieu_jeux']),
+                            _buildDetailRow('Durée', '${game['duree_jeux']} minutes'),
+                            if (game['age_mini'] != null)
+                              _buildDetailRow('Âge minimum', game['age_mini']),
+                          ]),
+                          
+                          // Tarifs
+                          _buildDetailSection('Tarifs', [
+                            _buildDetailRow('Tarif Enfant', '${game['tarif_enf_jeux']} FCFA'),
+                            _buildDetailRow('Tarif Adulte', '${game['tarif_adu_jeux']} FCFA'),
+                          ]),
+                          
+                          // Programmation
+                          _buildDetailSection('Programmation', [
+                            _buildDetailRow('Date minimum', game['date_min']),
+                            // Ajoutez d'autres informations de programmation si nécessaire
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.deepPurple,
+          ),
+        ),
+        SizedBox(height: 12),
+        ...children,
+        SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildDetailRow(String label, String? value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[700],
+              ),
             ),
-            IconButton(icon: Icon(Icons.edit, color: Colors.blue), onPressed: () => _editGame(game)),
-            IconButton(icon: Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteGame(game['id_jeux'])),
-          ],
-        ),
+          ),
+          Expanded(
+            child: Text(
+              value ?? 'Non spécifié',
+              style: TextStyle(
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

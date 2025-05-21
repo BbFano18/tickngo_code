@@ -47,7 +47,7 @@ class GameService {
   Future<List<Map<String, dynamic>>> fetchGameSchedules(int gameId) async {
     try {
       final response =
-      await http.get(Uri.parse('${ApiConfig.baseUrl}jeux/$gameId/programme'));
+      await http.get(Uri.parse('${ApiConfig.baseUrl}programme/$gameId/jeux'));
       if (response.statusCode != 200) {
         throw Exception('Erreur ${response.statusCode} - ${response.body}');
       }
@@ -151,7 +151,7 @@ class GameService {
         throw Exception('ID du jeu invalide');
       }
 
-      final uri = Uri.parse('${ApiConfig.baseUrl}jeux/$gameId/programme');
+      final uri = Uri.parse('${ApiConfig.baseUrl}programme/$gameId');
       final response = await http.put(
         uri,
         headers: {'Content-Type': 'application/json'},
@@ -174,29 +174,68 @@ class GameService {
   }
 
   /// Ajouter des programmations pour un jeu
-  Future addSchedule(List<Map<String, dynamic>> scheduleEntries) async {
-    if (scheduleEntries.isEmpty) {
+  Future<bool> addSchedule(Map<String, dynamic> programData) async {
+    try {
+      if (programData['id_jeux'] == null) {
+        throw Exception('ID du jeu requis');
+      }
+
+      final uri = Uri.parse('${ApiConfig.baseUrl}programme/jeux');
+      final response = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'id_jour': programData['id_jour'],
+          'id_jeux': programData['id_jeux'],
+          'heure': programData['heure'],
+          'id_event': programData['id_event'] ?? null,
+          'id_film': programData['id_film'] ?? null,
+        }),
+      );
+
+      if (response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        return decoded['success'] == true || decoded['status'] == 'success';
+      }
+
+      print('Erreur API ${response.statusCode}: ${response.body}');
+      return false;
+    } catch (e) {
+      print('Erreur addSchedule: $e');
       return false;
     }
-    // On suppose que tous les éléments ont le même game_id
-    final gameId = scheduleEntries.first['game_id'];
+  }
 
-    // Convertir le format de date ISO 8601 au format attendu par l'API
-    final formattedSchedules = scheduleEntries.map((entry) {
-      final datetime = DateTime.parse(entry['datetime']);
-      // Obtenir le jour de la semaine (1 = Lundi, 7 = Dimanche)
-      final dayOfWeek = datetime.weekday;
-      // Formater l'heure au format "HH:MM"
-      final hour = datetime.hour.toString().padLeft(2, '0');
-      final minute = datetime.minute.toString().padLeft(2, '0');
+  /// Récupérer les programmes d'un jeu spécifique
+  Future<List<Map<String, dynamic>>> getProgrammesByJeu(int idJeux) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}programme/$idJeux/jeux')
+      );
 
-      return {
-        'id_jour': dayOfWeek,
-        'heure': '$hour:$minute',
-      };
-    }).toList();
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        return (decoded['data'] as List).cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      print('Erreur getProgrammesByJeu: $e');
+      return [];
+    }
+  }
 
-    return updateGameSchedules(int.parse(gameId.toString()), formattedSchedules);
+  // Supprimer un programme
+  Future<bool> deleteProgramme(int idProg) async {
+    try {
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.baseUrl}programme/$idProg')
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('Erreur deleteProgramme: $e');
+      return false;
+    }
   }
 
   /// Mettre à jour un jeu existant

@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../../API/api_config.dart';
+import '../../Cinema/Services/movie_service.dart';
 import '../Services/ajoutfilm_service.dart';
 
 //Affichage des films
@@ -25,25 +27,39 @@ class _MovieDashboardState extends State<MovieDashboard> {
   }
 
   Future<void> _loadMovies() async {
+    if (!mounted) return;
+    
     setState(() => _isLoading = true);
     try {
-      final userId = await _getUserId(); // Utilisez _getUserId() ici
+      final userId = await _getUserId();
       final List<Map<String, dynamic>> movies = await _movieService.fetchMovies(userId);
+      if (!mounted) return;
+      
+      // Récupérer les classifications pour chaque film
+      for (var movie in movies) {
+        if (movie['id_classif'] != null) {
+          final classification = await _movieService.fetchClassificationById(movie['id_classif']);
+          if (classification != null) {
+            movie['lib_classif'] = classification['lib_classif'];
+          }
+        }
+      }
+      
       setState(() {
         _movies = movies;
+        _isLoading = false;
       });
     } catch (e) {
       print('Erreur lors du chargement des films: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur lors du chargement des films'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
+      if (!mounted) return;
+      
       setState(() => _isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur lors du chargement des films'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -88,9 +104,9 @@ class _MovieDashboardState extends State<MovieDashboard> {
                   Expanded(
                     child: AddMovieForm(
                       centreId: _userId!,
-                      onSuccess: () {
+                      onSuccess: () async {
+                        await _loadMovies(); // Actualiser après l'ajout
                         Navigator.pop(context);
-                        _loadMovies();
                       },
                     ),
                   ),
@@ -130,22 +146,20 @@ class _MovieDashboardState extends State<MovieDashboard> {
   void _deleteMovie(int id) async {
     bool confirm = await showDialog<bool>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Confirmer la suppression'),
-          content: Text('Êtes-vous sûr de vouloir supprimer ce film ?'),
-          actions: [
-            TextButton(
-              child: Text('Annuler'),
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            TextButton(
-              child: Text('Supprimer', style: TextStyle(color: Colors.red)),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
-        );
-      },
+      builder: (context) => AlertDialog(
+        title: Text('Confirmer la suppression'),
+        content: Text('Êtes-vous sûr de vouloir supprimer ce film ?'),
+        actions: [
+          TextButton(
+            child: Text('Annuler'),
+            onPressed: () => Navigator.of(context).pop(false),
+          ),
+          TextButton(
+            child: Text('Supprimer', style: TextStyle(color: Colors.red)),
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
+        ],
+      ),
     ) ?? false;
 
     if (!confirm) return;
@@ -153,7 +167,6 @@ class _MovieDashboardState extends State<MovieDashboard> {
     setState(() => _isLoading = true);
     try {
       await _movieService.deleteMovie(id);
-      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -163,7 +176,7 @@ class _MovieDashboardState extends State<MovieDashboard> {
         );
       }
       
-      await _loadMovies();
+      await _loadMovies(); // Actualiser après la suppression
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -181,181 +194,67 @@ class _MovieDashboardState extends State<MovieDashboard> {
   }
 
   void _editMovie(Map<String, dynamic> movie) {
-    final formKey = GlobalKey<FormState>();
-    final nameController = TextEditingController(text: movie['nom_film']);
-    final durationController = TextEditingController(text: movie['duree_film']?.toString());
-    final tarifEnfantController = TextEditingController(text: movie['tarif_enf_film']?.toString() ?? '0');
-    final tarifAdulteController = TextEditingController(text: movie['tarif_adu_film']?.toString() ?? '0');
-    final tarifPremiereController = TextEditingController(text: movie['tarif_premiere']?.toString() ?? '0');
-    String? currentImageUrl = movie['image_url'];
-    int? selectedFormatId = movie['id_format'];
-    int? selectedGenreId = movie['id_genre'];
-    int? selectedLanguageId = movie['id_langue'];
-    int? selectedClassificationId = movie['id_classif'];
-    int? selectedCategoryId = movie['id_cat_fil'];
-    File? imageFile;
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => Container(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            top: 16,
-            left: 16,
-            right: 16,
-          ),
-          child: SingleChildScrollView(
-            child: Form(
-              key: formKey,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.6,
+          maxChildSize: 0.95,
+          builder: (_, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Image picker
-                  GestureDetector(
-                    onTap: () async {
-                      final ImagePicker picker = ImagePicker();
-                      final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-                      if (image != null) {
-                        setState(() {
-                          imageFile = File(image.path);
-                          currentImageUrl = null;
-                        });
-                      }
-                    },
-                    child: Container(
-                      height: 150,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[200],
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey[400]!),
-                      ),
-                      child: imageFile != null 
-                          ? Image.file(imageFile!, fit: BoxFit.cover)
-                          : (currentImageUrl != null
-                              ? Image.network(currentImageUrl!, fit: BoxFit.cover)
-                              : Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey[600]),
-                                    SizedBox(height: 8),
-                                    Text('Modifier l\'image', style: TextStyle(color: Colors.grey[600])),
-                                  ],
-                                )),
-                    ),
-                  ),
-                  SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: nameController,
-                    decoration: InputDecoration(
-                      labelText: 'Nom du film',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                  SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: durationController,
-                    decoration: InputDecoration(
-                      labelText: 'Durée (minutes)',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      suffixText: 'min',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                  SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: tarifEnfantController,
-                    decoration: InputDecoration(
-                      labelText: 'Tarif Enfant',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      suffixText: 'FCFA',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                  SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: tarifAdulteController,
-                    decoration: InputDecoration(
-                      labelText: 'Tarif Adulte',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      suffixText: 'FCFA',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                  SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: tarifPremiereController,
-                    decoration: InputDecoration(
-                      labelText: 'Tarif Première',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      suffixText: 'FCFA',
-                    ),
-                    keyboardType: TextInputType.number,
-                  ),
-                  SizedBox(height: 24),
-
-                  ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepPurple,
-                      minimumSize: Size(double.infinity, 50),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () async {
-                      try {
-                        final data = {
-                          'nom_film': nameController.text.isNotEmpty ? nameController.text : movie['nom_film'],
-                          'duree_film': durationController.text.isNotEmpty ? durationController.text : movie['duree_film'],
-                          'tarif_enf_film': tarifEnfantController.text.isNotEmpty ? int.parse(tarifEnfantController.text) : movie['tarif_enf_film'],
-                          'tarif_adu_film': tarifAdulteController.text.isNotEmpty ? int.parse(tarifAdulteController.text) : movie['tarif_adu_film'],
-                          'tarif_premiere': tarifPremiereController.text.isNotEmpty ? int.parse(tarifPremiereController.text) : movie['tarif_premiere'],
-                          'id_format': selectedFormatId ?? movie['id_format'],
-                          'id_genre': selectedGenreId ?? movie['id_genre'],
-                          'id_langue': selectedLanguageId ?? movie['id_langue'],
-                          'id_classif': selectedClassificationId ?? movie['id_classif'],
-                          'id_cat_fil': selectedCategoryId ?? movie['id_cat_fil'],
-                        };
-
-                        if (imageFile != null) {
-                          data['image_url'] = imageFile;
-                        }
-
-                        final success = await _movieService.updateMovie(movie['id_film'], data);
-                        
-                        if (success) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('Film mis à jour avec succès'), backgroundColor: Colors.green),
-                          );
-                          Navigator.pop(context);
-                          _loadMovies(); // Recharger la liste après la mise à jour
-                        } else {
-                          throw Exception('Échec de la mise à jour');
-                        }
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Erreur: ${e.toString()}'),
-                            backgroundColor: Colors.red,
+                  Container(
+                    padding: EdgeInsets.all(8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                        Text(
+                          'Modifier le Film',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).primaryColor,
                           ),
-                        );
-                      }
-                    },
-                    child: Text('Mettre à jour', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                        ),
+                        SizedBox(width: 48),
+                      ],
+                    ),
                   ),
-                  SizedBox(height: 16),
+                  Divider(),
+                  Expanded(
+                    child: AddMovieForm(
+                      centreId: _userId!,
+                      movieToEdit: movie,
+                      onSuccess: () async {
+                        await _loadMovies(); // Actualiser après la modification
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ),
                 ],
               ),
-            ),
-          ),
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -445,29 +344,101 @@ class _MovieDashboardState extends State<MovieDashboard> {
     );
   }
 
-  _buildMovieCard(Map<String, dynamic> movie) {
+  Widget _buildMovieCard(Map<String, dynamic> movie) {
     return Card(
       elevation: 3,
-      margin: EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      margin: EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        contentPadding: EdgeInsets.all(12),
-        leading: _buildMovieImage(movie['image_url']),
-        title: Text(movie['nom_film'] ?? 'Sans titre', style: TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: 4),
-            Text('Durée: ${movie['duree_film'] ?? 'N/A'} min'),
-            Text('Genre: ${movie['lib_genre'] ?? 'Non spécifié'}'),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(icon: Icon(Icons.edit, color: Colors.blue), onPressed: () => _editMovie(movie)),
-            IconButton(icon: Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteMovie(movie['id_film'])),
-          ],
+      child: InkWell(
+        onTap: () => _showMovieDetails(movie),
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: Row(
+            children: [
+              _buildMovieImage(movie['image_url']),
+              SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      movie['nom_film'] ?? '',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Icon(Icons.timer, size: 16, color: Colors.grey[600]),
+                              SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  movie['duree_film'] ?? '',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        SizedBox(width: 16),
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Icon(Icons.local_offer, size: 16, color: Colors.grey[600]),
+                              SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  movie['lib_classif'] ?? '',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.calendar_today, color: Colors.blue),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AddProgrammeScreen(movieId: movie['id_film']),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.edit, color: Colors.blue),
+                    onPressed: () => _editMovie(movie),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _deleteMovie(movie['id_film']),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -494,14 +465,208 @@ class _MovieDashboardState extends State<MovieDashboard> {
       }),
     );
   }
+
+  void _showMovieDetails(Map<String, dynamic> movie) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.6,
+          maxChildSize: 0.95,
+          builder: (_, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Détails du film',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.close, color: Colors.white),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      padding: EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (movie['image_url'] != null)
+                            Container(
+                              width: double.infinity,
+                              height: 250,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                image: DecorationImage(
+                                  image: NetworkImage('${ApiConfig.baseUrl2}storage/${movie['image_url']}'),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          SizedBox(height: 24),
+                          _buildDetailSection('Informations générales', [
+                            _buildDetailRow('Nom', movie['nom_film']),
+                            _buildDetailRow('Durée', movie['duree_film']),
+                            _buildDetailRow('Format', movie['lib_format']),
+                            _buildDetailRow('Genre', movie['lib_genre']),
+                            _buildDetailRow('Langue', movie['lib_langue']),
+                            _buildDetailRow('Classification', movie['lib_classif']),
+                            _buildDetailRow('Catégorie', movie['lib_cat_fil']),
+                          ]),
+                          _buildDetailSection('Tarifs', [
+                            if (movie['lib_cat_fil']?.toLowerCase() == 'standard') ...[
+                              if (movie['tarif_enf_film'] != null && movie['tarif_enf_film'] > 0)
+                                _buildTarifRow('Tarif Enfant', movie['tarif_enf_film']),
+                              if (movie['tarif_adu_film'] != null && movie['tarif_adu_film'] > 0)
+                                _buildTarifRow('Tarif Adulte', movie['tarif_adu_film']),
+                            ] else if (movie['lib_cat_fil']?.toLowerCase() == 'première') ...[
+                              if (movie['tarif_premiere'] != null && movie['tarif_premiere'] > 0)
+                                _buildTarifRow('Tarif Première', movie['tarif_premiere']),
+                            ] else ...[
+                              if (movie['prix'] != null && movie['prix'] > 0)
+                                _buildTarifRow('Tarif', movie['prix']),
+                            ],
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailSection(String title, List<Widget> children) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 24),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Colors.deepPurple,
+            ),
+          ),
+          SizedBox(height: 16),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRow(String label, String? value) {
+    if (value == null || value.isEmpty || value == 'null') return SizedBox.shrink();
+    
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 120,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[700],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: Colors.black87,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTarifRow(String label, dynamic value) {
+    return Container(
+      margin: EdgeInsets.symmetric(vertical: 8),
+      padding: EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.deepPurple.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: Colors.deepPurple,
+            ),
+          ),
+          Text(
+            '${value.toString()} FCFA',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.deepPurple,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 //Formulaire d'ajout d'un film
 class AddMovieForm extends StatefulWidget {
   final int centreId;
   final VoidCallback onSuccess;
+  final Map<String, dynamic>? movieToEdit;
 
-  const AddMovieForm({required this.centreId, required this.onSuccess});
+  const AddMovieForm({
+    required this.centreId,
+    required this.onSuccess,
+    this.movieToEdit,
+  });
 
   @override
   _AddMovieFormState createState() => _AddMovieFormState();
@@ -510,29 +675,92 @@ class AddMovieForm extends StatefulWidget {
 class _AddMovieFormState extends State<AddMovieForm> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _nameController = TextEditingController();
-  final TextEditingController _durationController = TextEditingController();
   final TextEditingController _tarifEnfantController = TextEditingController();
   final TextEditingController _tarifAdulteController = TextEditingController();
   final TextEditingController _tarifPremiereController = TextEditingController();
   final TextEditingController _prixController = TextEditingController();
+  
+  File? _imageFile;
+  String? _imagePath;
+  String? _currentImageUrl;
+  bool _isLoading = false;
+  
+  String? _selectedDuration;
   int? _selectedFormatId;
   int? _selectedGenreId;
   int? _selectedLanguageId;
   int? _selectedClassificationId;
   int? _selectedCategoryId;
-  String? _imagePath;
-  bool _isLoading = false;
+  
   final MovieService _movieService = MovieService();
+  final _imagePicker = ImagePicker();
+  
   List<Map<String, dynamic>> _format = [];
   List<Map<String, dynamic>> _genre = [];
   List<Map<String, dynamic>> _language = [];
   List<Map<String, dynamic>> _classification= [];
   List<Map<String, dynamic>> _categorie_film = [];
 
+  // Liste des durées prédéfinies
+  List<String> _durations = ['1h', '1h30min', '2h', '2h30min', '3h'];
+
+  bool get isStandardCategory {
+    if (_selectedCategoryId == null) return false;
+    final category = _categorie_film.firstWhere(
+      (cat) => cat['id_cat_fil'] == _selectedCategoryId,
+      orElse: () => {'lib_cat_fil': ''},
+    );
+    final isStandard = category['lib_cat_fil'].toString().toLowerCase() == 'standard';
+    print('Vérification catégorie Standard: ID=$_selectedCategoryId, libellé=${category['lib_cat_fil']}, isStandard=$isStandard');
+    return isStandard;
+  }
+
+  bool get isPremiereCategory {
+    if (_selectedCategoryId == null) return false;
+    final category = _categorie_film.firstWhere(
+      (cat) => cat['id_cat_fil'] == _selectedCategoryId,
+      orElse: () => {'lib_cat_fil': ''},
+    );
+    final isPremiere = category['lib_cat_fil'].toString().toLowerCase() == 'première';
+    print('Vérification catégorie Première: ID=$_selectedCategoryId, libellé=${category['lib_cat_fil']}, isPremiere=$isPremiere');
+    return isPremiere;
+  }
+
   @override
   void initState() {
     super.initState();
     _loadReferenceData();
+    if (widget.movieToEdit != null) {
+      _loadExistingMovieData();
+    }
+  }
+
+  void _loadExistingMovieData() {
+    final movie = widget.movieToEdit!;
+    print('Chargement des données du film: ${movie.toString()}');
+    
+    _nameController.text = movie['nom_film'] ?? '';
+    _selectedDuration = movie['duree_film'];
+    _selectedFormatId = movie['id_format'];
+    _selectedGenreId = movie['id_genre'];
+    _selectedLanguageId = movie['id_langue'];
+    _selectedClassificationId = movie['id_classif'];
+    _selectedCategoryId = movie['id_cat_fil'];
+    
+    // Chargement des tarifs selon la catégorie
+    if (isStandardCategory) {
+      _tarifEnfantController.text = movie['tarif_enf_film']?.toString() ?? '';
+      _tarifAdulteController.text = movie['tarif_adu_film']?.toString() ?? '';
+      print('Tarifs Standard - Enfant: ${_tarifEnfantController.text}, Adulte: ${_tarifAdulteController.text}');
+    } else if (isPremiereCategory) {
+      _tarifPremiereController.text = movie['tarif_premiere']?.toString() ?? '';
+      print('Tarif Première: ${_tarifPremiereController.text}');
+    } else {
+      _prixController.text = movie['prix']?.toString() ?? '';
+      print('Tarif autre catégorie: ${_prixController.text}');
+    }
+    
+    _currentImageUrl = movie['image_url'];
   }
 
   Future<void> _loadReferenceData() async {
@@ -584,97 +812,24 @@ class _AddMovieFormState extends State<AddMovieForm> {
           ),
           SizedBox(height: 16),
 
-          TextFormField(
-            controller: _durationController,
+          // Durée avec combo prédéfini
+          DropdownButtonFormField<String>(
             decoration: InputDecoration(
-              labelText: 'Durée (minutes)',
+              labelText: 'Durée du film',
               prefixIcon: Icon(Icons.timer, color: Colors.deepPurple),
-              suffixText: 'min',
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
               filled: true,
               fillColor: Colors.white,
             ),
-            keyboardType: TextInputType.number,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Veuillez entrer la durée';
-              }
-              if (int.tryParse(value) == null) {
-                return 'Veuillez entrer un nombre valide';
-              }
-              return null;
-            },
-          ),
-          SizedBox(height: 24),
-
-          // Section Configuration des tarifs
-          _buildSectionTitle('Configuration des tarifs'),
-          TextFormField(
-            controller: _tarifEnfantController,
-            decoration: InputDecoration(
-              labelText: 'Tarif Enfant',
-              prefixIcon: Icon(Icons.child_care, color: Colors.deepPurple),
-              suffixText: 'FCFA',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-            keyboardType: TextInputType.number,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Veuillez entrer le tarif enfant';
-              }
-              if (int.tryParse(value) == null) {
-                return 'Veuillez entrer un nombre valide';
-              }
-              return null;
-            },
-          ),
-          SizedBox(height: 16),
-
-          TextFormField(
-            controller: _tarifAdulteController,
-            decoration: InputDecoration(
-              labelText: 'Tarif Adulte',
-              prefixIcon: Icon(Icons.person, color: Colors.deepPurple),
-              suffixText: 'FCFA',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-            keyboardType: TextInputType.number,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Veuillez entrer le tarif adulte';
-              }
-              if (int.tryParse(value) == null) {
-                return 'Veuillez entrer un nombre valide';
-              }
-              return null;
-            },
-          ),
-          SizedBox(height: 16),
-
-          TextFormField(
-            controller: _tarifPremiereController,
-            decoration: InputDecoration(
-              labelText: 'Tarif Première',
-              prefixIcon: Icon(Icons.star, color: Colors.deepPurple),
-              suffixText: 'FCFA',
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-            keyboardType: TextInputType.number,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Veuillez entrer le tarif première';
-              }
-              if (int.tryParse(value) == null) {
-                return 'Veuillez entrer un nombre valide';
-              }
-              return null;
-            },
+            value: _selectedDuration,
+            items: _durations.map((duration) {
+              return DropdownMenuItem<String>(
+                value: duration,
+                child: Text(duration),
+              );
+            }).toList(),
+            onChanged: (val) => setState(() => _selectedDuration = val),
+            validator: (value) => value == null ? 'Veuillez sélectionner une durée' : null,
           ),
           SizedBox(height: 24),
 
@@ -720,8 +875,8 @@ class _AddMovieFormState extends State<AddMovieForm> {
             items: _classification,
             value: _selectedClassificationId,
             onChanged: (value) => setState(() => _selectedClassificationId = value),
-            labelText: 'Classification',
-            validator: (value) => value == null ? 'Veuillez sélectionner une classification' : null,
+            labelText: 'Tranche d\'âge',
+            validator: (value) => value == null ? 'Veuillez sélectionner une tranche d\'âge' : null,
             idField: 'id_classif',
             labelField: 'lib_classif',
             icon: Icons.local_offer,
@@ -731,13 +886,118 @@ class _AddMovieFormState extends State<AddMovieForm> {
           _buildDropdown(
             items: _categorie_film,
             value: _selectedCategoryId,
-            onChanged: (value) => setState(() => _selectedCategoryId = value),
+            onChanged: (value) {
+              setState(() {
+                _selectedCategoryId = value;
+                // Réinitialiser tous les contrôleurs de tarif
+                _tarifEnfantController.clear();
+                _tarifAdulteController.clear();
+                _tarifPremiereController.clear();
+                _prixController.clear();
+              });
+            },
             labelText: 'Catégorie',
             validator: (value) => value == null ? 'Veuillez sélectionner une catégorie' : null,
             idField: 'id_cat_fil',
             labelField: 'lib_cat_fil',
             icon: Icons.movie_filter,
           ),
+          SizedBox(height: 24),
+          // Section Tarifs (conditionnelle selon la catégorie)
+
+          if (isStandardCategory) ...[
+            _buildSectionTitle('Configuration des tarifs'),
+            TextFormField(
+              controller: _tarifEnfantController,
+              decoration: InputDecoration(
+                labelText: 'Tarif Enfant',
+                prefixIcon: Icon(Icons.child_care, color: Colors.deepPurple),
+                suffixText: 'FCFA',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Veuillez entrer le tarif enfant';
+                }
+                if (int.tryParse(value) == null) {
+                  return 'Veuillez entrer un nombre valide';
+                }
+                return null;
+              },
+            ),
+            SizedBox(height: 16),
+            TextFormField(
+              controller: _tarifAdulteController,
+              decoration: InputDecoration(
+                labelText: 'Tarif Adulte',
+                prefixIcon: Icon(Icons.person, color: Colors.deepPurple),
+                suffixText: 'FCFA',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Veuillez entrer le tarif adulte';
+                }
+                if (int.tryParse(value) == null) {
+                  return 'Veuillez entrer un nombre valide';
+                }
+                return null;
+              },
+            ),
+          ] else if (isPremiereCategory) ...[
+            TextFormField(
+              controller: _tarifPremiereController,
+              decoration: InputDecoration(
+                labelText: 'Tarif Première',
+                prefixIcon: Icon(Icons.star, color: Colors.deepPurple),
+                suffixText: 'FCFA',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Veuillez entrer le tarif première';
+                }
+                if (int.tryParse(value) == null) {
+                  return 'Veuillez entrer un nombre valide';
+                }
+                return null;
+              },
+            ),
+          ] else
+            if (_selectedCategoryId != null) ...[
+              _buildSectionTitle('Configuration des tarifs'),
+            TextFormField(
+              controller: _prixController,
+              decoration: InputDecoration(
+                labelText: 'Tarif de la catégorie',
+                prefixIcon: Icon(Icons.attach_money, color: Colors.deepPurple),
+                suffixText: 'FCFA',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                filled: true,
+                fillColor: Colors.white,
+              ),
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Veuillez entrer le tarif de la catégorie';
+                }
+                if (int.tryParse(value) == null) {
+                  return 'Veuillez entrer un nombre valide';
+                }
+                return null;
+              },
+            ),
+          ],
+          SizedBox(height: 24),
           _buildSubmitButton(),
         ],
       ),
@@ -758,6 +1018,56 @@ class _AddMovieFormState extends State<AddMovieForm> {
     );
   }
 
+  Future<void> _pickImage() async {
+    final pickedFile = await _imagePicker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _imageFile = File(pickedFile.path);
+        _imagePath = pickedFile.path;
+        _currentImageUrl = null;
+      });
+    }
+  }
+
+  Widget _buildImageWidget() {
+    if (_imageFile != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Image.file(
+          _imageFile!,
+          fit: BoxFit.cover,
+          width: double.infinity,
+        ),
+      );
+    } else if (_currentImageUrl != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(11),
+        child: Image.network(
+          '${ApiConfig.baseUrl2}storage/${_currentImageUrl}',
+          fit: BoxFit.cover,
+          width: double.infinity,
+          errorBuilder: (_, __, ___) => _buildPlaceholder(),
+        ),
+      );
+    } else {
+      return _buildPlaceholder();
+    }
+  }
+
+  Widget _buildPlaceholder() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey[600]),
+        SizedBox(height: 8),
+        Text(
+          'Ajouter une image',
+          style: TextStyle(color: Colors.grey[700]),
+        ),
+      ],
+    );
+  }
+
   Widget _buildImagePicker() {
     return GestureDetector(
       onTap: _pickImage,
@@ -768,39 +1078,9 @@ class _AddMovieFormState extends State<AddMovieForm> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.grey[400]!, width: 1),
         ),
-        child: _imagePath == null
-            ? Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.add_photo_alternate, size: 50, color: Colors.grey[600]),
-                  SizedBox(height: 8),
-                  Text(
-                    'Ajouter une image',
-                    style: TextStyle(color: Colors.grey[700]),
-                  ),
-                ],
-              )
-            : ClipRRect(
-                borderRadius: BorderRadius.circular(11),
-                child: Image.file(
-                  File(_imagePath!),
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                ),
-              ),
+        child: _buildImageWidget(),
       ),
     );
-  }
-
-  Future<void> _pickImage() async {
-    final ImagePicker _picker = ImagePicker();
-    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
-
-    if (image != null) {
-      setState(() {
-        _imagePath = image.path;
-      });
-    }
   }
 
   Widget _buildSubmitButton() {
@@ -820,10 +1100,10 @@ class _AddMovieFormState extends State<AddMovieForm> {
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.add, color: Colors.white),
+                  Icon(Icons.save, color: Colors.white),
                   SizedBox(width: 8),
                   Text(
-                    'Créer le film et programmer',
+                    widget.movieToEdit != null ? 'Mettre à jour le film' : 'Créer le film et programmer',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -836,67 +1116,104 @@ class _AddMovieFormState extends State<AddMovieForm> {
   }
 
   Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate()) {
-      print('Validation du formulaire échouée');
-      return;
-    }
-    if (_imagePath == null) {
-      print('Aucune image sélectionnée');
-      _showErrorSnackBar('Veuillez sélectionner une image');
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
+
     try {
-      print('Préparation des données du film...');
+      print('Début de la soumission du formulaire');
+      print('Catégorie sélectionnée: $_selectedCategoryId');
+      print('isStandardCategory: $isStandardCategory');
+      print('isPremiereCategory: $isPremiereCategory');
+
       final movieData = {
         'nom_film': _nameController.text,
-        'duree_film': int.parse(_durationController.text),
-        'id_format': _selectedFormatId!,
+        'duree_film': _selectedDuration,
         'id_centre': widget.centreId,
-        'id_genre': _selectedGenreId!,
-        'id_langue': _selectedLanguageId!,
-        'id_classif': _selectedClassificationId!,
-        'id_cat_fil': _selectedCategoryId!,
-        'image_url': File(_imagePath!),
-        'tarif_enf_film': int.parse(_tarifEnfantController.text),
-        'tarif_adu_film': int.parse(_tarifAdulteController.text),
-        'tarif_premiere': int.parse(_tarifPremiereController.text),
-        'prix': int.parse(_prixController.text),
+        'id_format': _selectedFormatId,
+        'id_genre': _selectedGenreId,
+        'id_langue': _selectedLanguageId,
+        'id_classif': _selectedClassificationId,
+        'id_cat_fil': _selectedCategoryId,
       };
-      print('Données du film préparées : ${movieData.toString()}');
 
-      print('Appel du service pour ajouter le film...');
-      final movieId = await _movieService.addMovie(movieData);
-      print('ID du film retourné : $movieId');
+      // Validation et gestion des tarifs selon la catégorie
+      if (isStandardCategory) {
+        print('Validation des tarifs Standard');
+        if (_tarifEnfantController.text.isEmpty || _tarifAdulteController.text.isEmpty) {
+          throw Exception('Les tarifs enfant et adulte sont requis pour la catégorie Standard');
+        }
+        movieData['tarif_enf_film'] = int.tryParse(_tarifEnfantController.text);
+        movieData['tarif_adu_film'] = int.tryParse(_tarifAdulteController.text);
+        // Ajout des tarifs par défaut pour la catégorie Standard
+        movieData['tarif_premiere'] = 0;
+        movieData['prix'] = 0;
+      } else if (isPremiereCategory) {
+        print('Validation des tarifs Première');
+        print('Valeur du tarif première: ${_tarifPremiereController.text}');
+        if (_tarifPremiereController.text.isEmpty) {
+          throw Exception('Le tarif première est requis pour la catégorie Première');
+        }
+        movieData['tarif_premiere'] = int.tryParse(_tarifPremiereController.text);
+        // Ajout des tarifs par défaut pour la catégorie Première
+        movieData['tarif_enf_film'] = 0;
+        movieData['tarif_adu_film'] = 0;
+        movieData['prix'] = 0;
+      } else if (_selectedCategoryId != null) {
+        print('Validation des tarifs autre catégorie');
+        if (_prixController.text.isEmpty) {
+          throw Exception('Le tarif de la catégorie est requis');
+        }
+        movieData['prix'] = int.tryParse(_prixController.text);
+        // Ajout des tarifs par défaut pour les autres catégories
+        movieData['tarif_enf_film'] = 0;
+        movieData['tarif_adu_film'] = 0;
+        movieData['tarif_premiere'] = 0;
+      }
 
-      if (movieId > 0) {
-        if (!mounted) return;
-        print('Film ajouté avec succès, navigation vers la programmation...');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Film ajouté avec succès'), backgroundColor: Colors.green),
-        );
-        widget.onSuccess();
-        Navigator.of(context).pop();
-        
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => AddProgrammeScreen(movieId: movieId),
-          ),
-        );
+      print('Données du film à envoyer: $movieData');
+
+      if (_imageFile != null) {
+        movieData['image_url'] = _imageFile;
+      }
+
+      if (widget.movieToEdit != null) {
+        print('Mise à jour du film existant');
+        final success = await _movieService.updateMovie(widget.movieToEdit!['id_film'], movieData);
+        if (success) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Film modifié avec succès'), backgroundColor: Colors.green),
+          );
+          widget.onSuccess();
+          Navigator.pop(context); // Fermer le formulaire après la modification
+        } else {
+          throw Exception('Échec de la modification du film');
+        }
       } else {
-        print('Échec de l\'ajout du film : ID invalide ($movieId)');
-        throw Exception('Échec de l\'ajout du film');
+        print('Création d\'un nouveau film');
+        final movieId = await _movieService.addMovie(movieData);
+        if (movieId > 0) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Film ajouté avec succès'), backgroundColor: Colors.green),
+          );
+          widget.onSuccess();
+          Navigator.pop(context); // Fermer le formulaire après l'ajout
+          // Naviguer vers l'écran de programmation
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AddProgrammeScreen(movieId: movieId),
+            ),
+          );
+        } else {
+          throw Exception('Échec de l\'ajout du film');
+        }
       }
     } catch (e) {
-      print('Exception dans _submitForm: ${e.toString()}');
-      if (!mounted) return;
+      print('Erreur lors de la soumission: $e');
       _showErrorSnackBar('Erreur: ${e.toString()}');
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      setState(() => _isLoading = false);
     }
   }
 
@@ -916,62 +1233,35 @@ class _AddMovieFormState extends State<AddMovieForm> {
     required String labelField,
     required IconData icon,
   }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        DropdownButtonFormField<int>(
-          decoration: InputDecoration(
-            labelText: labelText,
-            prefixIcon: Icon(icon, color: Colors.deepPurple),
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          items: items.map((item) {
-            return DropdownMenuItem<int>(
-              value: item[idField] as int,
-              child: Text(item[labelField] ?? ''),
-            );
-          }).toList(),
-          onChanged: (val) {
-            onChanged(val);
-            if (idField == 'id_cat_fil' && val != null) {
-              _prixController.clear();
-            }
-          },
-          value: value,
-          isExpanded: true,
-          validator: validator,
+    return DropdownButtonFormField<int>(
+      decoration: InputDecoration(
+        labelText: labelText,
+        prefixIcon: Icon(icon, color: Colors.deepPurple),
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
-        if (idField == 'id_cat_fil' && value != null) ...[
-          SizedBox(height: 16),
-          TextFormField(
-            controller: _prixController,
-            decoration: InputDecoration(
-              labelText: 'Prix de la catégorie',
-              prefixIcon: Icon(Icons.attach_money, color: Colors.deepPurple),
-              suffixText: 'FCFA',
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            keyboardType: TextInputType.number,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Veuillez entrer le prix de la catégorie';
-              }
-              if (int.tryParse(value) == null) {
-                return 'Veuillez entrer un nombre valide';
-              }
-              return null;
-            },
-          ),
-        ],
-      ],
+      ),
+      items: items.map((item) {
+        return DropdownMenuItem<int>(
+          value: item[idField] as int,
+          child: Text(item[labelField] ?? ''),
+        );
+      }).toList(),
+      onChanged: (val) {
+        onChanged(val);
+        if (idField == 'id_cat_fil' && val != null) {
+          // Réinitialiser les contrôleurs de tarif lors du changement de catégorie
+          _tarifEnfantController.clear();
+          _tarifAdulteController.clear();
+          _tarifPremiereController.clear();
+          _prixController.clear();
+        }
+      },
+      value: value,
+      isExpanded: true,
+      validator: validator,
     );
   }
 }
@@ -1040,7 +1330,10 @@ class _AddProgrammeScreenState extends State<AddProgrammeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Programmation du film'),
+        title: Text(
+          'Programmation du film',
+          style: TextStyle(color: Colors.white),
+        ),
         backgroundColor: Colors.deepPurple,
       ),
       body: _isLoading

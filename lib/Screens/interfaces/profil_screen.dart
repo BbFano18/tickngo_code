@@ -1,6 +1,6 @@
+import 'package:TicknGo/Screens/interfaces/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:TicknGo/Screens/interfaces/splash_screen.dart' show AppBackground;
 import '../../Services/incription_service.dart';
 
 class ProfileScreen extends StatefulWidget {

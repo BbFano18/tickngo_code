@@ -1,9 +1,16 @@
+import 'package:TicknGo/Screens/interfaces/ticket_details_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:TicknGo/Screens/interfaces/ticket_confirmation_screen.dart';
-import '../../Services/kkiapay_service.dart';
 import '../../themes/app_theme.dart';
-import '../payment/kkiapay_payment_screen.dart';
+import 'package:kkiapay_flutter_sdk/kkiapay_flutter_sdk.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+//  les états de paiement
+const String PAYMENT_CANCELLED = "PAYMENT_CANCELLED";
+const String PENDING_PAYMENT = "PENDING_PAYMENT";
+const String PAYMENT_INIT = "PAYMENT_INIT";
+const String PAYMENT_SUCCESS = "PAYMENT_SUCCESS";
+const String PAYMENT_FAILED = "PAYMENT_FAILED";
 
 enum ReservationType {
   film,
@@ -50,29 +57,37 @@ class ReservationScreen extends StatefulWidget {
 }
 
 class _ReservationScreenState extends State<ReservationScreen> {
-  Map<String, bool> selectedTickets = {};
+  String? selectedTicketType;
   String? selectedCategory;
   int quantity = 1;
   double totalPrice = 0;
   bool isLoading = false;
+  String? _userName;
+  String? _userPhone;
+  String? _userEmail;
 
   @override
   void initState() {
     super.initState();
-    _initializeTickets();
+    _initializeSelection();
     _calculateTotal();
+    _loadUserInfo();
   }
 
-  void _initializeTickets() {
+  Future<void> _loadUserInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _userName = prefs.getString('user_name');
+    });
+  }
+
+  void _initializeSelection() {
     if (widget.reservation.type == ReservationType.evenement) {
-      selectedCategory = widget.reservation.categoryPrices.keys.first;
-    } else {
-      widget.reservation.ticketPrices.forEach((key, value) {
-        selectedTickets[key] = false;
-      });
-      if (widget.reservation.type == ReservationType.film && widget.reservation.fixedCategory != null) {
-        selectedCategory = widget.reservation.fixedCategory;
+      if (widget.reservation.categoryPrices.isNotEmpty) {
+        selectedCategory = widget.reservation.categoryPrices.keys.first;
       }
+    } else {
+      selectedTicketType = null;
     }
   }
 
@@ -82,70 +97,130 @@ class _ReservationScreenState extends State<ReservationScreen> {
     if (widget.reservation.type == ReservationType.evenement) {
       total = widget.reservation.categoryPrices[selectedCategory] ?? 0;
     } else {
-      selectedTickets.forEach((type, isSelected) {
-        if (isSelected) {
-          total += widget.reservation.ticketPrices[type] ?? 0;
-        }
-      });
-
-      if (widget.reservation.type == ReservationType.film && widget.reservation.fixedCategory != null) {
-        total += widget.reservation.categoryPrices[widget.reservation.fixedCategory] ?? 0;
+      if (selectedTicketType != null) {
+        total = widget.reservation.ticketPrices[selectedTicketType] ?? 0;
       }
     }
 
     setState(() => totalPrice = total * quantity);
   }
 
-  void _initiatePayment() {
-    if (widget.reservation.type != ReservationType.evenement && !selectedTickets.values.contains(true)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Veuillez sélectionner au moins un type de ticket"),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+  Future<void> successCallback(response, context) async {
+    if (response is Map<String, dynamic>) {
+      switch (response['status']) {
+        case PAYMENT_CANCELLED:
+          try {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Paiement annulé")),
+            );
+            Navigator.pop(context);
+          } catch (e) {
+            debugPrint(e.toString());
+          }
+          break;
+
+        case PENDING_PAYMENT:
+          debugPrint(PENDING_PAYMENT);
+          break;
+
+        case PAYMENT_INIT:
+          debugPrint(PAYMENT_INIT);
+          break;
+
+        case PAYMENT_SUCCESS:
+          try {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Paiement réussi")),
+            );
+            
+            // Naviguer vers la page de détails du ticket
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                builder: (context) => TicketDetailsScreen(
+                  ticket: {
+                    'id': response['transactionId'] ?? 'N/A',
+                    'type': _getReservationType(),
+                    'titre': widget.reservation.eventTitle,
+                    'date': widget.reservation.eventDate,
+                    'heure': widget.reservation.eventTime,
+                    'lieu': widget.reservation.eventLocation,
+                    'prix': totalPrice,
+                    'categorie': widget.reservation.type == ReservationType.evenement
+                        ? selectedCategory ?? 'Standard'
+                        : selectedTicketType ?? 'Standard',
+                    'qrData': '${response['transactionId']}-${widget.reservation.eventTitle}',
+                    'status': 'valide',
+                    'description': widget.reservation.duration != null
+                        ? 'Durée: ${widget.reservation.duration}'
+                        : null,
+                  },
+                ),
+              ),
+            );
+          } catch (e) {
+            debugPrint(e.toString());
+          }
+          break;
+
+        case PAYMENT_FAILED:
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Échec du paiement")),
+          );
+          break;
+
+        default:
+          break;
+      }
+    } else {
+      debugPrint('Response is not a Map: $response');
     }
+  }
 
-    if (totalPrice <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Le montant total doit être supérieur à 0"),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+  String _getReservationType() {
+    switch (widget.reservation.type) {
+      case ReservationType.film:
+        return "Film";
+      case ReservationType.jeu:
+        return "Jeu";
+      case ReservationType.evenement:
+        return "Événement";
     }
+  }
 
-    // Récupérer le type de ticket sélectionné
-    final selectedTicketTypes = selectedTickets.entries
-        .where((entry) => entry.value)
-        .map((entry) => entry.key)
-        .join(", ");
-
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          child: Container(
-            height: MediaQuery.of(context).size.height * 0.8,
-            width: MediaQuery.of(context).size.width * 0.9,
-            child: KkiapayPaymentScreen(
-              amount: totalPrice,
-              eventTitle: widget.reservation.eventTitle,
-              ticketType: selectedTicketTypes,
-              category: selectedCategory ?? "Standard",
-              quantity: quantity,
-            ),
-          ),
-        );
-      },
+  void _initiateKkiapayPayment() {
+    String reference = "TICKNGO${DateTime.now().millisecondsSinceEpoch.toString().substring(0, 10)}";
+    String reservationType = _getReservationType();
+    
+    final kkiapay = KKiaPay(
+      amount: totalPrice.toInt(),
+      countries: ["BJ"],
+      phone: "22961000000",
+      name: _userName,
+      email:_userEmail ,
+      reason: "Réservation $reservationType - ${widget.reservation.eventTitle}",
+      data: 'Reservation data',
+      sandbox: true,
+      apikey: 'de3b91d004ab11f08e9fcf9f74583c43',
+      callback: successCallback,
+      theme: '#7F56D9FF',
+      partnerId: reference,
+      paymentMethods: ["momo", "card"],
     );
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => kkiapay,
+        ),
+      );
+    }
   }
 
   Widget _buildTicketTypeSelector() {
     if (widget.reservation.type == ReservationType.evenement) {
-      return const SizedBox.shrink();
+      return _buildEventCategorySelector();
     }
 
     return Column(
@@ -173,7 +248,7 @@ class _ReservationScreenState extends State<ReservationScreen> {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: Colors.grey.shade300),
             ),
-            child: CheckboxListTile(
+            child: RadioListTile<String>(
               title: Text(
                 entry.key,
                 style: GoogleFonts.poppins(
@@ -186,14 +261,14 @@ class _ReservationScreenState extends State<ReservationScreen> {
                   color: isDisabled ? Colors.grey : Colors.black87,
                 ),
               ),
-              value: selectedTickets[entry.key] ?? false,
-              onChanged: isDisabled ? null : (bool? value) {
+              value: entry.key,
+              groupValue: selectedTicketType,
+              onChanged: isDisabled ? null : (String? value) {
                 setState(() {
-                  selectedTickets[entry.key] = value ?? false;
+                  selectedTicketType = value;
                   _calculateTotal();
                 });
               },
-              enabled: !isDisabled,
             ),
           );
         }).toList(),
@@ -201,85 +276,51 @@ class _ReservationScreenState extends State<ReservationScreen> {
     );
   }
 
-  Widget _buildCategorySelector() {
-    if (widget.reservation.type == ReservationType.jeu) {
-      return const SizedBox.shrink();
-    }
-
-    if (widget.reservation.type == ReservationType.film && widget.reservation.fixedCategory != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Catégorie",
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
+  Widget _buildEventCategorySelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "Catégorie",
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.grey.shade300),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: selectedCategory,
+              items: widget.reservation.categoryPrices.entries.map((entry) {
+                return DropdownMenuItem<String>(
+                  value: entry.key,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(entry.key),
+                      Text("${entry.value.toStringAsFixed(0)} FCFA"),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (String? newValue) {
+                setState(() {
+                  selectedCategory = newValue;
+                  _calculateTotal();
+                });
+              },
             ),
           ),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(widget.reservation.fixedCategory!),
-                Text("${widget.reservation.categoryPrices[widget.reservation.fixedCategory]?.toStringAsFixed(0) ?? '0'} FCFA"),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (widget.reservation.type == ReservationType.evenement) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            "Catégorie",
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: selectedCategory,
-                isExpanded: true,
-                padding: const EdgeInsets.symmetric(horizontal: 15),
-                items: widget.reservation.categoryPrices.entries.map((entry) {
-                  return DropdownMenuItem<String>(
-                    value: entry.key,
-                    child: Text("${entry.key} (${entry.value.toStringAsFixed(0)} FCFA)"),
-                  );
-                }).toList(),
-                onChanged: (newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      selectedCategory = newValue;
-                      _calculateTotal();
-                    });
-                  }
-                },
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return const SizedBox.shrink();
+        ),
+      ],
+    );
   }
 
   Widget _buildQuantitySelector() {
@@ -361,28 +402,31 @@ class _ReservationScreenState extends State<ReservationScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          ...selectedTickets.entries
-              .where((entry) => entry.value)
-              .map((entry) {
-            final price = widget.reservation.ticketPrices[entry.key] ?? 0;
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("Ticket ${entry.key}"),
-                Text("${price.toStringAsFixed(0)} FCFA"),
-              ],
-            );
-          }),
-          if (selectedCategory != null) ...[
-            const SizedBox(height: 5),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text("Catégorie $selectedCategory"),
-                Text("${(widget.reservation.categoryPrices[selectedCategory] ?? 0).toStringAsFixed(0)} FCFA"),
-              ],
-            ),
-          ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(widget.reservation.type == ReservationType.evenement
+                  ? "Catégorie"
+                  : "Type de ticket"),
+              Text(
+                widget.reservation.type == ReservationType.evenement
+                    ? selectedCategory ?? "Non sélectionné"
+                    : selectedTicketType ?? "Non sélectionné"
+              ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text("Prix unitaire"),
+              Text(
+                widget.reservation.type == ReservationType.evenement
+                    ? "${widget.reservation.categoryPrices[selectedCategory]?.toStringAsFixed(0) ?? '0'} FCFA"
+                    : "${widget.reservation.ticketPrices[selectedTicketType]?.toStringAsFixed(0) ?? '0'} FCFA"
+              ),
+            ],
+          ),
           const SizedBox(height: 5),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -472,68 +516,64 @@ class _ReservationScreenState extends State<ReservationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return AppBackground(
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text("Réservation"),
-          backgroundColor: Colors.deepPurple,
-          foregroundColor: Colors.white,
-          automaticallyImplyLeading: true,
-        ),
-        body: Stack(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildEventDetails(),
-                    const SizedBox(height: 20),
-                    _buildTicketTypeSelector(),
-                    const SizedBox(height: 20),
-                    _buildCategorySelector(),
-                    const SizedBox(height: 20),
-                    _buildQuantitySelector(),
-                    const SizedBox(height: 20),
-                    _buildOrderSummary(),
-                    const SizedBox(height: 30),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        onPressed: isLoading ? null : _initiatePayment,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppTheme.primaryColor,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text("Réservation"),
+        backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
+        automaticallyImplyLeading: true,
+      ),
+      body: Stack(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildEventDetails(),
+                  const SizedBox(height: 20),
+                  _buildTicketTypeSelector(),
+                  const SizedBox(height: 20),
+                  _buildQuantitySelector(),
+                  const SizedBox(height: 20),
+                  _buildOrderSummary(),
+                  const SizedBox(height: 30),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: isLoading ? null : _initiateKkiapayPayment,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.primaryColor,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        child: isLoading
-                            ? const CircularProgressIndicator(color: Colors.white)
-                            : Text(
-                          "Payer maintenant",
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
+                      ),
+                      child: isLoading
+                          ? const CircularProgressIndicator(color: Colors.white)
+                          : Text(
+                        "Payer maintenant",
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-            if (isLoading)
-              Container(
-                color: Colors.black.withOpacity(0.3),
-                child: const Center(
-                  child: CircularProgressIndicator(),
-                ),
+          ),
+          if (isLoading)
+            Container(
+              color: Colors.black.withOpacity(0.3),
+              child: const Center(
+                child: CircularProgressIndicator(),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

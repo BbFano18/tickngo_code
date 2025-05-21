@@ -44,17 +44,17 @@ class _AddScreenState extends State<AddScreen> with SingleTickerProviderStateMix
             labelPadding: EdgeInsets.symmetric(horizontal: 5),
             indicatorSize: TabBarIndicatorSize.tab,
             tabs: [
+              Tab(icon: Icon(Icons.event_available_rounded, size: 22), text: 'Événements'),
               Tab(icon: Icon(Icons.movie_filter_rounded, size: 22), text: 'Films'),
               Tab(icon: Icon(Icons.sports_esports_rounded, size: 22), text: 'Jeux'),
-              Tab(icon: Icon(Icons.event_available_rounded, size: 22), text: 'Événements'),
             ],
           ),
         ),
         body: TabBarView(
           children: [
+            EventDashboard(),
             MovieDashboard(),
             GameDashboard(),
-            EventDashboard(),
           ],
         ),
       ),

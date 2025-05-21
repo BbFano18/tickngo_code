@@ -1,9 +1,9 @@
-import 'package:TicknGo/Screens/interfaces/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../Services/incription_service.dart';
 import '../../themes/app_theme.dart';
 import '../interfaces/acceuil_screen.dart';
+import '../interfaces/splash_screen.dart';
 
 class RegistrationScreen1 extends StatefulWidget {
   const RegistrationScreen1({super.key});
@@ -82,7 +82,7 @@ class _RegistrationScreenState extends State<RegistrationScreen1> {
                 style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w600,
-                    color: AppTheme.primaryColor),
+                    color: Colors.white),
               ),
               SizedBox(height: 25),
               _buildNameField(),
@@ -310,7 +310,7 @@ class _RegistrationScreenState extends State<RegistrationScreen1> {
     return SizedBox(
       width: double.infinity,
       child: _isLoading
-          ? Center(child: CircularProgressIndicator(color: AppTheme.primaryColor))
+          ? Center(child: CircularProgressIndicator( color: Colors.white))
           : ElevatedButton(
         onPressed: _handleRegistration,
         style: ElevatedButton.styleFrom(

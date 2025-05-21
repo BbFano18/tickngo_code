@@ -1,16 +1,14 @@
-import 'dart:convert';
 
-import 'package:TicknGo/Screens/login/inscription_centre_screen.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import '../../Services/connexion_centre_service.dart';
 import '../../themes/app_theme.dart';
 import '../Dashbord/Pages/accueil_screen.dart';
 import '../interfaces/splash_screen.dart';
+import 'inscription_centre_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -131,7 +129,7 @@ class LoginScreenState extends State<LoginScreen> {
                       child: Text(
                         "Mot de passe oublié ?",
                         style: GoogleFonts.poppins(
-                          color: AppTheme.primaryColor,
+                          color: Colors.white,
                           fontWeight: FontWeight.w500,
                         ),
                         textAlign: TextAlign.center,
@@ -151,7 +149,7 @@ class LoginScreenState extends State<LoginScreen> {
                       child: Text(
                         "S'inscrire",
                         style: GoogleFonts.poppins(
-                          color: AppTheme.primaryColor,
+                          color: Colors.white,
                           fontWeight: FontWeight.w500,
                         ),
                         textAlign: TextAlign.center,

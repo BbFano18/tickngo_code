@@ -14,7 +14,8 @@ import '../Evenement/evenement_screen.dart';
 import '../Jeu/jeu_screen.dart';
 import 'maintenance_screen.dart';
 import 'profil_screen.dart';
-import 'tickets_screen.dart';
+import 'tickets_list_screen.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -78,8 +79,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _navigateFromImage(int index) {
     final destinations = {
-      'cine': CinemaScreen(),
       'even': EventsScreen(),
+      'cine': CinemaScreen(),
       'jeu': GamesScreen(),
     };
 
@@ -165,7 +166,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               icon: const Icon(Icons.confirmation_number_outlined, color: Colors.white),
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const TicketsScreen()),
+                MaterialPageRoute(builder: (_) => const TicketsListScreen()),
               ),
             ),
             const SizedBox(width: 4),
@@ -275,8 +276,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _buildCategoryItem('Cinéma', 'Assets/imgs/cine.png', CinemaScreen()),
           _buildCategoryItem('Événement', 'Assets/imgs/even.png', EventsScreen()),
+          _buildCategoryItem('Cinéma', 'Assets/imgs/cine.png', CinemaScreen()),
           _buildCategoryItem('Jeux', 'Assets/imgs/jeu.png', GamesScreen()),
         ],
       ),

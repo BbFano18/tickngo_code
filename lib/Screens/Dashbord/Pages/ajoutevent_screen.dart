@@ -33,13 +33,20 @@ class _EventDashboardState extends State<EventDashboard> {
     try {
       final userId = await _getUserId();
       final List<Map<String, dynamic>> events = await _eventService.fetchEvents(userId);
-      setState(() {
-        _events = events;
-      });
+      if (mounted) {
+        setState(() {
+          _events = events;
+        });
+      }
     } catch (e) {
       print('Erreur lors du chargement des événements: $e');
+      if (mounted) {
+        SnackBarHelper.showError(context, 'Erreur lors du chargement des événements');
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -62,7 +69,6 @@ class _EventDashboardState extends State<EventDashboard> {
       backgroundColor: Colors.transparent,
       builder: (context) {
         return ScaffoldMessenger(
-          // Ceci devrait permettre aux SnackBar de s'afficher dans le BottomSheet
           child: DraggableScrollableSheet(
             initialChildSize: 0.9,
             minChildSize: 0.6,
@@ -86,9 +92,9 @@ class _EventDashboardState extends State<EventDashboard> {
                     Expanded(
                       child: AddEventForm(
                         centreId: _userId!,
-                        onSuccess: () {  // Correction: onSuccess au lieu de onEventAdded
+                        onSuccess: () async {
+                          await _loadEvents(); // Actualiser après l'ajout
                           Navigator.pop(context);
-                          _loadEvents();
                         },
                       ),
                     ),
@@ -143,20 +149,20 @@ class _EventDashboardState extends State<EventDashboard> {
           ),
         ],
       ),
-    ) ??
-        false;
+    ) ?? false;
     if (!confirm) return;
     setState(() => _isLoading = true);
     try {
       final success = await _eventService.deleteEvent(id);
       final message = success ? 'Événement supprimé avec succès' : 'Échec de la suppression';
-      final color = success ? Colors.green : Colors.red;
       SnackBarHelper.showSuccess(context, message);
-      if (success) _loadEvents();
+      if (success) await _loadEvents(); // Actualiser après la suppression
     } catch (e) {
       SnackBarHelper.showError(context, 'Erreur: ${e.toString()}');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -210,9 +216,9 @@ class _EventDashboardState extends State<EventDashboard> {
                     child: AddEventForm(
                       centreId: _userId!,
                       eventToEdit: event,
-                      onSuccess: () {
+                      onSuccess: () async {
+                        await _loadEvents(); // Actualiser après la modification
                         Navigator.pop(context);
-                        _loadEvents();
                       },
                     ),
                   ),
@@ -306,26 +312,55 @@ class _EventDashboardState extends State<EventDashboard> {
   Widget _buildEventCard(Map<String, dynamic> event) {
     return Card(
       elevation: 3,
-      margin: EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+      margin: EdgeInsets.symmetric(vertical: 6, horizontal: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        contentPadding: EdgeInsets.all(12),
-        leading: _buildEventImage(event['image_url']),
-        title: Text(event['nom_event'] ?? 'Sans titre', style: TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SizedBox(height: 4),
-            Text('Lieu: ${event['lieu_event'] ?? 'N/A'}'),
-            Text('Date: ${event['date_event'] ?? 'N/A'}'),
-          ],
-        ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            IconButton(icon: Icon(Icons.edit, color: Colors.blue), onPressed: () => _editEvent(event)),
-            IconButton(icon: Icon(Icons.delete, color: Colors.red), onPressed: () => _deleteEvent(event['id_event'])),
-          ],
+      child: InkWell(
+        onTap: () => _showEventDetails(event),
+        child: Padding(
+          padding: EdgeInsets.all(12),
+          child: Row(
+            children: [
+              _buildEventImage(event['image_url']),
+              SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      event['nom_event'] ?? 'Sans titre',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.deepPurple,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Lieu: ${event['lieu_event'] ?? 'Non spécifié'}',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    Text(
+                      'Date: ${event['date_event'] ?? 'Non spécifiée'}',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.edit, color: Colors.blue),
+                    onPressed: () => _editEvent(event),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _deleteEvent(event['id_event']),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -353,6 +388,156 @@ class _EventDashboardState extends State<EventDashboard> {
           color: Colors.grey[300],
           child: Icon(Icons.image_not_supported, color: Colors.grey[600]),
         ),
+      ),
+    );
+  }
+
+  void _showEventDetails(Map<String, dynamic> event) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.9,
+          minChildSize: 0.6,
+          maxChildSize: 0.95,
+          builder: (_, scrollController) {
+            return Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                children: [
+                  // En-tête avec bouton de fermeture
+                  Container(
+                    padding: EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Détails de l\'événement',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.deepPurple,
+                          ),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Contenu
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scrollController,
+                      padding: EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Image de l'événement
+                          if (event['image_url'] != null)
+                            Container(
+                              width: double.infinity,
+                              height: 200,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                image: DecorationImage(
+                                  image: NetworkImage(event['image_url']),
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          SizedBox(height: 24),
+                          
+                          // Informations générales
+                          _buildDetailSection('Informations générales', [
+                            _buildDetailRow('Nom', event['nom_event']),
+                            _buildDetailRow('Lieu', event['lieu_event']),
+                            _buildDetailRow('Date', event['date_event']),
+                          ]),
+                          
+                          // Tarifs
+                          _buildDetailSection('Tarifs', [
+                            if (event['tarif_standard'] != null)
+                              _buildDetailRow('Tarif Standard', '${event['tarif_standard']} FCFA'),
+                            if (event['tarif_VIP'] != null)
+                              _buildDetailRow('Tarif VIP', '${event['tarif_VIP']} FCFA'),
+                            if (event['tarif_VVIP'] != null)
+                              _buildDetailRow('Tarif VVIP', '${event['tarif_VVIP']} FCFA'),
+                          ]),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailSection(String title, List<Widget> children) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.deepPurple,
+          ),
+        ),
+        SizedBox(height: 12),
+        ...children,
+        SizedBox(height: 24),
+      ],
+    );
+  }
+
+  Widget _buildDetailRow(String label, String? value) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[700],
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value ?? 'Non spécifié',
+              style: TextStyle(
+                color: Colors.black87,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

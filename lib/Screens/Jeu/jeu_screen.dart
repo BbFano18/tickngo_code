@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:TicknGo/Screens/interfaces/reservation_screen.dart';
 import '../../API/api_config.dart';
+import '../interfaces/reservation_screen.dart';
 import '../interfaces/splash_screen.dart';
 
 //Modèle pour un jeu
@@ -411,24 +411,6 @@ class GameDetailsScreen extends StatelessWidget {
                   _buildDetailItem(Icons.cake, "Âge minimum", game.ageMin),
                   if (game.programme != null && game.programme!.isNotEmpty)
                     _buildDetailItem(Icons.event, "Programme", game.programme!),
-                  const SizedBox(height: 25),
-                  Text(
-                    "Description du jeu",
-                    style: GoogleFonts.montserrat(
-                      fontSize: 20,
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    "Ce jeu vous plonge dans une expérience immersive avec des graphismes incroyables et un gameplay captivant. Venez profiter de ce moment unique !",
-                    style: GoogleFonts.montserrat(
-                      fontSize: 16,
-                      color: Colors.grey[300],
-                      height: 1.5,
-                    ),
-                  ),
                   const SizedBox(height: 30),
                   Center(
                     child: SizedBox(
